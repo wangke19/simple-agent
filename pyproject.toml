@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simple-agent"
+version = "0.1.0"
+description = "A simple AI agent with tool-calling capabilities"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.94.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/simple_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that call real LLM API",
+]

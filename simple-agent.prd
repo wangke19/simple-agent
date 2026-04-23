@@ -1,0 +1,109 @@
+# Simple Agent — Product Requirements Document
+
+## 1. Overview
+
+Simple Agent is a minimal AI agent framework that demonstrates the core observe-decide-act loop with tool-calling. It provides a clean abstraction for building agents that use LLMs to reason about tasks and execute tools to accomplish them.
+
+## 2. Goals
+
+- Demonstrate the fundamental Agent architecture in the simplest possible form
+- Provide a clean, extensible tool system that makes adding capabilities straightforward
+- Be testable with both mocked and real LLM backends
+- Serve as a learning reference for understanding how AI agents work
+
+## 3. Core Architecture
+
+### 3.1 Agent (Decision Loop)
+
+The agent orchestrates a bounded loop:
+
+1. Construct a system prompt listing available tools and their descriptions
+2. Send the system prompt + conversation history to the LLM
+3. Parse the LLM's JSON response:
+   - `{"type": "answer", "content": "..."}` → return the answer, loop ends
+   - `{"type": "tool", "tool": "name", "input": "..."}` → execute the tool, append result to history, continue loop
+4. If the step limit is reached without an answer, return an error message
+
+The step limit (default 5) prevents infinite loops, controls API costs, and acts as a safety boundary.
+
+### 3.2 Tool System
+
+Tools follow a contract defined by `BaseTool`:
+
+- **name**: unique string identifier
+- **description**: natural language description for the LLM to understand the tool's purpose
+- **execute(input)**: takes a string, returns a string result
+
+Tools are registered via `ToolRegistry`, which validates uniqueness, provides lookup, and formats tool descriptions for the system prompt.
+
+### 3.3 LLM Client
+
+A thin wrapper around the Anthropic SDK that:
+- Accepts a system prompt and message list
+- Returns the raw text response
+- Wraps API errors (connection, rate limit, status) into `LLMError`
+
+This abstraction isolates the SDK dependency so the agent core has no direct dependency on any specific provider.
+
+### 3.4 Configuration
+
+`AgentConfig` reads all settings from environment variables:
+- API connection (base URL, API key, model name)
+- Behavior (max steps, log level)
+
+Configuration is separated from code so the agent can be deployed without code changes.
+
+### 3.5 Error Recovery
+
+The agent handles two error scenarios gracefully:
+
+- **JSON parse failure**: The malformed response is not discarded. An error message is appended to the conversation history, and the LLM is asked again. This allows the LLM to self-correct.
+- **Unknown tool or tool execution failure**: The error message is returned as the tool result, giving the LLM context to try a different approach.
+
+## 4. API Design
+
+### 4.1 SimpleAgent
+
+```python
+agent = SimpleAgent(config=None, llm_client=None, tool_registry=None)
+agent.register_tool(tool: BaseTool)
+result = agent.run(task: str, max_steps: int | None = None) -> str
+```
+
+All constructor parameters are optional. When omitted, the agent creates defaults from environment variables, enabling both simple one-line usage and dependency injection for testing.
+
+### 4.2 BaseTool
+
+```python
+class MyTool(BaseTool):
+    name = "my_tool"
+    description = "What this tool does"
+
+    def execute(self, input: str) -> str:
+        return "result"
+```
+
+### 4.3 Exceptions
+
+| Exception | When |
+|---|---|
+| `AgentConfigError` | Missing required env vars |
+| `LLMError` | API connection, rate limit, or status errors |
+| `ToolError` | Unknown tool, duplicate registration, or execution failure |
+| `ResponseParseError` | LLM response cannot be parsed |
+
+## 5. Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| JSON-based tool calling (not native function calling) | Keeps the protocol provider-agnostic and easy to understand |
+| Concrete `BaseTool` ABC (not `Protocol`) | Gives clear guidance for tool authors, natural place for shared logic |
+| Dependency injection with defaults | Supports both simple `SimpleAgent()` usage and test injection |
+| Step limit default of 5 | Most tasks complete in 2-3 steps; 5 covers multi-tool chains with margin |
+| Dataclass config (not Pydantic) | Three env vars don't justify an extra dependency |
+
+## 6. Quality
+
+- **29 unit tests** with mocked LLM covering: decision loop, config, LLM client error handling, tool registry, prompt construction
+- **4 integration tests** with real API covering: direct answers, single/multi-tool calls, Chinese language
+- All tests pass with `python -m pytest tests/ -v`
