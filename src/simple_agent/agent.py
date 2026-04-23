@@ -9,6 +9,7 @@ from simple_agent.config import AgentConfig
 from simple_agent.exceptions import ToolError
 from simple_agent.llm_client import LLMClient
 from simple_agent.tools.base import BaseTool
+from simple_agent.tools.memory import MemoryTool
 from simple_agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,11 @@ class SimpleAgent:
         steps = max_steps or self._config.max_steps
         self._messages.append({"role": "user", "content": task})
         system_prompt = "你是一个AI助手，可以使用工具来完成任务。请根据需要调用工具，或直接给出答案。"
+        memory_tool = self._tools.get("memory") if "memory" in [t.name for t in self._tools.list_tools()] else None
+        if memory_tool and isinstance(memory_tool, MemoryTool):
+            memory_context = memory_tool.load_into_system_prompt()
+            if memory_context:
+                system_prompt += memory_context
         api_tools = self._tools.to_api_format()
 
         for step in range(steps):

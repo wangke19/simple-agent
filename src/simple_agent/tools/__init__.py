@@ -5,10 +5,11 @@ from simple_agent.tools.file_edit import EditTool
 from simple_agent.tools.file_grep import GrepTool
 from simple_agent.tools.file_read import ReadTool
 from simple_agent.tools.file_write import WriteTool
+from simple_agent.tools.memory import MemoryTool
 from simple_agent.tools.registry import ToolRegistry
 from simple_agent.tools.search import SearchTool
 
 __all__ = [
     "BaseTool", "BashTool", "CalculatorTool", "EditTool", "GrepTool",
-    "ReadTool", "SearchTool", "ToolRegistry", "WriteTool",
+    "MemoryTool", "ReadTool", "SearchTool", "ToolRegistry", "WriteTool",
 ]
