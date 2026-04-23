@@ -7,19 +7,23 @@ from simple_agent.tools.base import BaseTool
 
 class EditTool(BaseTool):
     name = "file_edit"
-    description = "精确替换文件中的字符串。需要提供old_string和new_string，old_string必须在文件中唯一匹配。"
 
-    def __init__(self, working_dir: str | Path = ".") -> None:
+    def __init__(self, working_dir: str | Path = ".", description: str | None = None) -> None:
+        super().__init__(description=description)
         self._working_dir = Path(working_dir).resolve()
+
+    @property
+    def _default_description(self) -> str:
+        return "Replace a unique string in a file. old_string must match exactly once."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径（相对于项目目录）"},
-                "old_string": {"type": "string", "description": "要替换的原始字符串"},
-                "new_string": {"type": "string", "description": "替换后的新字符串"},
+                "path": {"type": "string", "description": "File path (relative to project directory)"},
+                "old_string": {"type": "string", "description": "The exact string to replace"},
+                "new_string": {"type": "string", "description": "The replacement string"},
             },
             "required": ["path", "old_string", "new_string"],
         }

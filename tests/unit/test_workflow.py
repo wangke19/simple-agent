@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from simple_agent.config import AgentConfig
 from simple_agent.dev_workflow import DevWorkflow
 from simple_agent import SimpleAgent
-from tests.conftest import make_text_block
+from tests.conftest import make_text_block, make_tool_use_block
 
 
 @pytest.fixture
@@ -68,3 +68,201 @@ def test_execute_tasks(mock_agent):
     result = wf.execute(max_steps_per_task=1)
 
     assert "completed" in wf.report.status or "passed" in result.lower() or wf.report.status == "completed"
+
+
+# --- Contract phase tests ---
+
+def test_define_contracts(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="## 任务拆解\n1. 创建 db.py 数据库层\n2. 创建 app.py GUI层")]),
+        # define_contracts
+        MagicMock(content=[MagicMock(type="text", text="## 模块接口契约\n### db.py\n- add_product(name: str) -> int\n### app.py\n调用 db.add_product(name)")]),
+    ]
+
+    wf = DevWorkflow(mock_agent)
+    wf.plan_task("build an app")
+    contract = wf.define_contracts("build an app")
+
+    assert "接口契约" in contract or "db.py" in contract
+    assert len(wf.contract) > 0
+
+
+def test_execute_with_contract(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. 创建 db.py\n2. 创建 app.py")]),
+        # task 1
+        MagicMock(content=[MagicMock(type="text", text="db created")]),
+        # task 2
+        MagicMock(content=[MagicMock(type="text", text="app created")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build something")
+    wf._contract = "### db.py\n- add_product(name: str, category: str) -> int"
+    wf.execute(max_steps_per_task=1)
+
+    # Verify the LLM was called with contract in the task prompt
+    calls = mock_agent._llm.call.call_args_list
+    # Task executions are calls[1] and calls[2]
+    task1_kwargs = calls[1].kwargs
+    messages = task1_kwargs.get("messages")
+    user_msgs = [m for m in messages if m["role"] == "user"]
+    assert any("add_product" in m.get("content", "") for m in user_msgs)
+
+
+def test_execute_without_contract(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. task one\n2. task two")]),
+        MagicMock(content=[MagicMock(type="text", text="done1")]),
+        MagicMock(content=[MagicMock(type="text", text="done2")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("do something")
+    assert wf.contract == ""
+    result = wf.execute(max_steps_per_task=1)
+    assert wf.report.status == "completed"
+
+
+def test_full_workflow_with_contracts(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="## 任务拆解\n1. 创建 db.py\n2. 创建 app.py")]),
+        # decompose
+        MagicMock(content=[MagicMock(type="text", text="1. 创建 db.py 数据库层\n2. 创建 app.py 界面层")]),
+        # define_contracts
+        MagicMock(content=[MagicMock(type="text", text="## 模块接口契约\n### db.py - Database\n- add_product(name, category, price) -> int")]),
+        # task 1
+        MagicMock(content=[MagicMock(type="text", text="db done")]),
+        # task 2
+        MagicMock(content=[MagicMock(type="text", text="app done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build inventory")
+    wf.decompose("build inventory")
+    contract = wf.define_contracts("build inventory")
+
+    assert len(wf.tasks) == 2
+    assert "db.py" in contract
+    result = wf.execute(max_steps_per_task=1)
+    assert wf.report.status == "completed"
+    assert "API Contract" in wf.report.final_result
+
+
+# --- WorkflowConfig and run_all tests ---
+
+def test_run_all(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. Create db.py\n2. Create app.py")]),
+        # decompose
+        MagicMock(content=[MagicMock(type="text", text="1. Create db.py database layer\n2. Create app.py GUI layer")]),
+        # define_contracts
+        MagicMock(content=[MagicMock(type="text", text="## API Contract\ndb.py methods here")]),
+        # task 1
+        MagicMock(content=[MagicMock(type="text", text="db done")]),
+        # task 2
+        MagicMock(content=[MagicMock(type="text", text="app done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    result = wf.run_all("build an app")
+    assert wf.report.status == "completed"
+
+
+def test_workflow_config_disable_contracts(mock_agent):
+    from simple_agent.dev_workflow import WorkflowConfig
+
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. Write code\n2. Test code")]),
+        # decompose
+        MagicMock(content=[MagicMock(type="text", text="1. Write some code file\n2. Run test verification")]),
+        # task 1
+        MagicMock(content=[MagicMock(type="text", text="code done")]),
+        # task 2
+        MagicMock(content=[MagicMock(type="text", text="tests pass")]),
+    ]
+
+    config = WorkflowConfig(enable_contracts=False)
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports", workflow_config=config)
+    wf.plan_task("do something")
+    wf.decompose("do something")
+    # Contract should be empty since we skipped define_contracts
+    assert wf.contract == ""
+    result = wf.execute(max_steps_per_task=1)
+    assert wf.report.status == "completed"
+
+
+def test_chinese_prompts_workflow(mock_agent):
+    from simple_agent.prompts import chinese_prompts
+    from simple_agent.messages import chinese_messages
+
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. Create something useful\n2. Test everything works")]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+        MagicMock(content=[MagicMock(type="text", text="done2")]),
+    ]
+
+    wf = DevWorkflow(
+        mock_agent,
+        report_dir="/tmp/test_reports",
+        prompts=chinese_prompts(),
+        messages=chinese_messages(),
+    )
+    wf.plan_task("build something")
+    result = wf.execute(max_steps_per_task=1)
+    assert wf.report.status == "completed"
+
+
+# --- retry_failed tests ---
+
+def test_retry_failed(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. Create db.py\n2. Create app.py\n3. Run tests")]),
+        # task 1 - success
+        MagicMock(content=[MagicMock(type="text", text="db done")]),
+        # task 2 - fails (max steps exceeded: 2 tool calls then max_steps hits)
+        MagicMock(content=[make_tool_use_block("search", {"input": "x"})]),
+        MagicMock(content=[make_tool_use_block("search", {"input": "x"})]),
+        # task 3 - success
+        MagicMock(content=[MagicMock(type="text", text="tests pass")]),
+        # retry task 2 - now succeeds
+        MagicMock(content=[MagicMock(type="text", text="app created on retry")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build app")
+
+    # Execute with task 2 failing (max_steps=2, 2 tool_use calls = max steps exceeded)
+    wf.execute(max_steps_per_task=2)
+
+    # Task 2 should be failed
+    assert wf._task_results[0]["status"] == "completed"
+    assert wf._task_results[1]["status"] == "failed"
+    assert wf._task_results[2]["status"] == "completed"
+    assert wf.failed_task_indices == [1]
+
+    # Retry
+    result = wf.retry_failed(max_steps_per_task=1)
+    assert wf._task_results[1]["status"] == "completed"
+    assert wf.report.status == "completed"
+
+
+def test_retry_failed_no_failures(mock_agent):
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. Simple task")]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("simple task")
+    wf.execute(max_steps_per_task=1)
+
+    assert wf.failed_task_indices == []
+    result = wf.retry_failed(max_steps_per_task=1)
+    assert wf.report.status == "completed"

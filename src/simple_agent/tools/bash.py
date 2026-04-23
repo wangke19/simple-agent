@@ -13,19 +13,23 @@ DENYLIST_PATTERNS = frozenset({
 
 class BashTool(BaseTool):
     name = "bash"
-    description = "执行shell命令，返回stdout和stderr。支持设置超时时间。"
 
-    def __init__(self, working_dir: str = ".", timeout: int = 120) -> None:
+    def __init__(self, working_dir: str = ".", timeout: int = 120, description: str | None = None) -> None:
+        super().__init__(description=description)
         self._working_dir = working_dir
         self._timeout = timeout
+
+    @property
+    def _default_description(self) -> str:
+        return "Execute shell commands and return stdout/stderr. Supports timeout."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "要执行的shell命令"},
-                "timeout": {"type": "integer", "description": f"超时秒数（默认{self._timeout}）"},
+                "command": {"type": "string", "description": "Shell command to execute"},
+                "timeout": {"type": "integer", "description": f"Timeout in seconds (default {self._timeout})"},
             },
             "required": ["command"],
         }

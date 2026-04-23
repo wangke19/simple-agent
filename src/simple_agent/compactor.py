@@ -5,19 +5,13 @@ import logging
 from typing import Any
 
 from simple_agent.llm_client import LLMClient
+from simple_agent.prompts import Prompts
 
 logger = logging.getLogger(__name__)
 
-COMPACT_SYSTEM_PROMPT = """你是一个对话摘要工具。请将以下对话历史压缩为简洁的摘要，保留所有关键信息：
-- 用户请求了什么
-- 调用了哪些工具，结果是什么
-- 做出了什么决定或结论
-
-请用中文输出摘要，使用要点格式。"""
-
 
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    """Rough token estimate: ~4 chars per token for mixed Chinese/English."""
+    """Rough token estimate: ~4 chars per token for mixed content."""
     total = 0
     for msg in messages:
         content = msg.get("content", "")
@@ -36,11 +30,10 @@ def compact_messages(
     llm: LLMClient,
     max_context_tokens: int,
     compact_threshold: float,
+    prompts: Prompts | None = None,
 ) -> list[dict[str, Any]]:
-    """Compact old messages if token count exceeds threshold.
-
-    Returns the (potentially compacted) message list.
-    """
+    """Compact old messages if token count exceeds threshold."""
+    prompts = prompts or Prompts()
     threshold = int(max_context_tokens * compact_threshold)
     current_tokens = estimate_tokens(messages)
 
@@ -58,9 +51,9 @@ def compact_messages(
     old_messages = messages[:-keep_recent]
     recent_messages = messages[-keep_recent:]
 
-    summary = _summarize(old_messages, llm)
+    summary = _summarize(old_messages, llm, prompts)
 
-    compacted = [{"role": "user", "content": f"之前的对话摘要：\n{summary}"}]
+    compacted = [{"role": "user", "content": prompts.compact_summary_prefix.format(summary=summary)}]
     compacted.extend(recent_messages)
 
     logger.info(
@@ -70,7 +63,7 @@ def compact_messages(
     return compacted
 
 
-def _summarize(messages: list[dict[str, Any]], llm: LLMClient) -> str:
+def _summarize(messages: list[dict[str, Any]], llm: LLMClient, prompts: Prompts) -> str:
     """Use the LLM to summarize a list of messages."""
     formatted = []
     for msg in messages:
@@ -83,9 +76,18 @@ def _summarize(messages: list[dict[str, Any]], llm: LLMClient) -> str:
                     if block.get("type") == "text":
                         parts.append(block.get("text", ""))
                     elif block.get("type") == "tool_use":
-                        parts.append(f"[调用工具: {block.get('name', '')}({json.dumps(block.get('input', {}), ensure_ascii=False)})]")
+                        parts.append(
+                            prompts.compact_tool_call_label.format(
+                                name=block.get("name", ""),
+                                input=json.dumps(block.get("input", {}), ensure_ascii=False),
+                            )
+                        )
                     elif block.get("type") == "tool_result":
-                        parts.append(f"[工具结果: {block.get('content', '')}]")
+                        parts.append(
+                            prompts.compact_tool_result_label.format(
+                                content=block.get("content", ""),
+                            )
+                        )
             content = "\n".join(parts)
         formatted.append(f"{role}: {content}")
 
@@ -93,10 +95,10 @@ def _summarize(messages: list[dict[str, Any]], llm: LLMClient) -> str:
 
     try:
         response = llm.call(
-            system_prompt=COMPACT_SYSTEM_PROMPT,
+            system_prompt=prompts.compact_system_prompt,
             messages=[{"role": "user", "content": conversation}],
         )
         return response.content[0].text
     except Exception as e:
         logger.warning("Failed to compact messages: %s", e)
-        return "（摘要生成失败）"
+        return prompts.compact_failed_fallback

@@ -5,20 +5,25 @@ from typing import Any
 
 
 class BaseTool(ABC):
-    @property
-    @abstractmethod
-    def name(self) -> str: ...
+    name: str  # class attribute
+
+    def __init__(self, description: str | None = None) -> None:
+        self._description_override = description
 
     @property
-    @abstractmethod
-    def description(self) -> str: ...
+    def description(self) -> str:
+        return self._description_override or self._default_description
+
+    @property
+    def _default_description(self) -> str:
+        return ""
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "input": {"type": "string", "description": "工具输入"},
+                "input": {"type": "string", "description": "Tool input"},
             },
             "required": ["input"],
         }

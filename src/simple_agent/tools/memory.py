@@ -7,11 +7,15 @@ from simple_agent.tools.base import BaseTool
 
 class MemoryTool(BaseTool):
     name = "memory"
-    description = "保存、回忆或删除跨会话的关键信息。支持 save（保存）、recall（回忆所有）、forget（按关键词删除）三种操作。"
 
-    def __init__(self, memory_dir: str | Path = ".agent") -> None:
+    def __init__(self, memory_dir: str | Path = ".agent", description: str | None = None) -> None:
+        super().__init__(description=description)
         self._memory_dir = Path(memory_dir)
         self._memory_file = self._memory_dir / "memory.md"
+
+    @property
+    def _default_description(self) -> str:
+        return "Save, recall, or delete cross-session information."
 
     @property
     def parameters(self):
@@ -21,11 +25,11 @@ class MemoryTool(BaseTool):
                 "action": {
                     "type": "string",
                     "enum": ["save", "recall", "forget"],
-                    "description": "操作类型：save保存，recall回忆所有，forget按关键词删除",
+                    "description": "Action: save (store), recall (retrieve all), forget (delete by keyword)",
                 },
                 "content": {
                     "type": "string",
-                    "description": "save时为要保存的内容，forget时为要匹配的关键词",
+                    "description": "Content to save, or keyword to forget",
                 },
             },
             "required": ["action"],
@@ -77,4 +81,4 @@ class MemoryTool(BaseTool):
         content = self._read_all()
         if not content:
             return ""
-        return f"\n\n你记住的信息：\n{content.strip()}"
+        return f"\n\nRemembered information:\n{content.strip()}"

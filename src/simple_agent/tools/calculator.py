@@ -6,14 +6,17 @@ from simple_agent.tools.base import BaseTool
 
 class CalculatorTool(BaseTool):
     name = "calculate"
-    description = "计算数学表达式"
+
+    @property
+    def _default_description(self) -> str:
+        return "Evaluate a mathematical expression."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "input": {"type": "string", "description": "要计算的数学表达式"},
+                "input": {"type": "string", "description": "Mathematical expression to evaluate"},
             },
             "required": ["input"],
         }
@@ -24,4 +27,4 @@ class CalculatorTool(BaseTool):
             result = eval(expr)  # noqa: S307
             return str(result)
         except Exception as e:
-            raise ToolError(f"计算错误: {e}") from e
+            raise ToolError(f"Evaluation error: {e}") from e

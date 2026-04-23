@@ -45,14 +45,13 @@ class TestToolRegistry:
 class TestSearchTool:
     def test_execute(self):
         tool = SearchTool()
-        result = tool.execute(input="北京天气")
-        assert "北京" in result
-        assert "25度" in result
+        result = tool.execute(input="weather")
+        assert "weather" in result
 
     def test_properties(self):
         tool = SearchTool()
         assert tool.name == "search"
-        assert tool.description == "搜索信息"
+        assert tool.description == "Search for information (placeholder)."
 
     def test_parameters_schema(self):
         tool = SearchTool()
@@ -69,13 +68,13 @@ class TestCalculatorTool:
 
     def test_execute_invalid_raises(self):
         tool = CalculatorTool()
-        with pytest.raises(ToolError, match="计算错误"):
+        with pytest.raises(ToolError, match="Evaluation error"):
             tool.execute(input="invalid_expr__$%")
 
     def test_properties(self):
         tool = CalculatorTool()
         assert tool.name == "calculate"
-        assert tool.description == "计算数学表达式"
+        assert tool.description == "Evaluate a mathematical expression."
 
     def test_parameters_schema(self):
         tool = CalculatorTool()

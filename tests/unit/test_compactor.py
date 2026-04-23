@@ -48,7 +48,7 @@ def test_compaction_triggers_above_threshold():
     # Low threshold to trigger compaction
     mock_llm = MagicMock()
     summary_block = MagicMock()
-    summary_block.text = "用户问了20个问题，助手的回复都很短"
+    summary_block.text = "User asked 20 questions, assistant gave short replies"
     mock_resp = MagicMock()
     mock_resp.content = [summary_block]
     mock_llm.call.return_value = mock_resp
@@ -60,7 +60,7 @@ def test_compaction_triggers_above_threshold():
 
     # Should have: 1 summary + 2 recent = 3
     assert len(result) == 3
-    assert "摘要" in result[0]["content"]
+    assert "summary" in result[0]["content"].lower()
     assert result[1] is messages[-2]
     assert result[2] is messages[-1]
     mock_llm.call.assert_called_once()
@@ -96,4 +96,4 @@ def test_compaction_summary_failure_falls_back():
 
     # Should still compact with fallback summary
     assert len(result) == 3
-    assert "摘要生成失败" in result[0]["content"]
+    assert "Summary generation failed" in result[0]["content"]

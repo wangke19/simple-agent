@@ -75,7 +75,7 @@ class TestMemorySystemPrompt:
     def test_load_into_prompt_with_data(self, tool):
         tool.execute(action="save", content="test fact")
         prompt = tool.load_into_system_prompt()
-        assert "你记住的信息" in prompt
+        assert "Remembered information" in prompt
         assert "test fact" in prompt
 
 

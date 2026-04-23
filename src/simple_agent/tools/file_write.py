@@ -10,18 +10,22 @@ logger = logging.getLogger(__name__)
 
 class WriteTool(BaseTool):
     name = "file_write"
-    description = "创建或覆盖文件。自动创建父目录。path参数为文件路径。"
 
-    def __init__(self, working_dir: str | Path = ".") -> None:
+    def __init__(self, working_dir: str | Path = ".", description: str | None = None) -> None:
+        super().__init__(description=description)
         self._working_dir = Path(working_dir).resolve()
+
+    @property
+    def _default_description(self) -> str:
+        return "Create or overwrite a file. Automatically creates parent directories."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径（相对于项目目录），例如 db.py 或 src/app.py"},
-                "content": {"type": "string", "description": "要写入文件的完整内容"},
+                "path": {"type": "string", "description": "File path (relative to project directory), e.g. db.py or src/app.py"},
+                "content": {"type": "string", "description": "Full content to write to the file"},
             },
             "required": ["path", "content"],
         }
@@ -32,7 +36,7 @@ class WriteTool(BaseTool):
         content = kwargs.get("content") or kwargs.get("text", "")
 
         if not path_str:
-            return "错误：未提供文件路径（path参数）"
+            return "Error: file path not provided (path parameter)"
 
         path = self._resolve(path_str)
         path.parent.mkdir(parents=True, exist_ok=True)

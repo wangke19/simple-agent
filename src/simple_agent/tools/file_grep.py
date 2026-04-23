@@ -8,19 +8,23 @@ from simple_agent.tools.base import BaseTool
 
 class GrepTool(BaseTool):
     name = "file_grep"
-    description = "搜索文件内容，支持正则表达式和文件名过滤。返回匹配的文件路径和行内容。"
 
-    def __init__(self, working_dir: str | Path = ".") -> None:
+    def __init__(self, working_dir: str | Path = ".", description: str | None = None) -> None:
+        super().__init__(description=description)
         self._working_dir = Path(working_dir).resolve()
+
+    @property
+    def _default_description(self) -> str:
+        return "Search file contents with regex. Supports glob pattern filtering."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "搜索的正则表达式"},
-                "glob": {"type": "string", "description": "文件名过滤（如 *.py），可选，默认所有文件"},
-                "path": {"type": "string", "description": "搜索目录（相对于项目目录），可选，默认为项目根目录"},
+                "pattern": {"type": "string", "description": "Regex pattern to search for"},
+                "glob": {"type": "string", "description": "Filename filter (e.g. *.py), optional, default all files"},
+                "path": {"type": "string", "description": "Search directory (relative to project), optional, default root"},
             },
             "required": ["pattern"],
         }

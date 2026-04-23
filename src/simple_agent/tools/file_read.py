@@ -7,19 +7,23 @@ from simple_agent.tools.base import BaseTool
 
 class ReadTool(BaseTool):
     name = "file_read"
-    description = "读取文件内容，支持指定行范围。返回带行号的文件内容。"
 
-    def __init__(self, working_dir: str | Path = ".") -> None:
+    def __init__(self, working_dir: str | Path = ".", description: str | None = None) -> None:
+        super().__init__(description=description)
         self._working_dir = Path(working_dir).resolve()
+
+    @property
+    def _default_description(self) -> str:
+        return "Read file contents with optional line range. Returns content with line numbers."
 
     @property
     def parameters(self):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径（相对于项目目录）"},
-                "offset": {"type": "integer", "description": "起始行号（从1开始），可选"},
-                "limit": {"type": "integer", "description": "读取行数，可选"},
+                "path": {"type": "string", "description": "File path (relative to project directory)"},
+                "offset": {"type": "integer", "description": "Starting line number (1-based), optional"},
+                "limit": {"type": "integer", "description": "Number of lines to read, optional"},
             },
             "required": ["path"],
         }

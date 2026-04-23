@@ -28,7 +28,7 @@ def test_paused_on_max_failures(agent, mock_llm):
     ])
     agent._max_failures = 2
     result = agent.run("test", max_steps=10)
-    assert "暂停" in result
+    assert "paused" in result.lower()
     assert agent.report.status == "paused"
     assert agent.report.failed_steps >= 2
 
@@ -43,7 +43,7 @@ def test_resume_after_pause(agent, mock_llm):
     ]
     agent._max_failures = 2
     result1 = agent.run("test task", max_steps=5)
-    assert "暂停" in result1
+    assert "paused" in result1.lower()
 
     result2 = agent.resume("try a different approach")
     assert result2 == "all good now"
