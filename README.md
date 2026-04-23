@@ -55,24 +55,58 @@ print(result)
 
 ## DevWorkflow: Build Applications from Requirements
 
-The framework includes a workflow engine that can build complete applications from a requirement file:
+### Step 1: Write a requirement file
+
+Create a `.md` file describing what you want to build:
+
+```markdown
+# student_mgmt.md
+
+Create a student registration management GUI app (tkinter + SQLite).
+
+Requires: db.py (database layer with students/courses/grades tables CRUD),
+app.py (GUI layer with 4 tabs: Student Management / Course Management /
+Grade Entry / Grade Query).
+
+Database schema:
+- Students table: id, name, gender, birthday, class, phone
+- Courses table: id, name, credits, teacher
+- Grades table: id, student_id, course_id, score, semester
+```
+
+### Step 2: Run the workflow
 
 ```bash
-# Create a requirement file
 python build_with_workflow.py student_mgmt.md
+```
 
-# Retry failed tasks
+Output goes to `demo/student_mgmt/`. The workflow runs 4 phases:
+
+1. **Plan** — LLM analyzes requirements and generates a task plan
+2. **Decompose** — Breaks plan into atomic tasks (e.g., "Create db.py", "Add CRUD methods")
+3. **Define Contracts** — Generates interface specs between modules so all tasks use consistent APIs
+4. **Execute** — Runs each task sequentially, injecting the contract for consistency
+
+### Step 3: Retry failed tasks
+
+Some tasks may fail (timeout, complex UI). Retry only the failures:
+
+```bash
 python build_with_workflow.py student_mgmt.md --retry
 ```
 
-The workflow runs 4 phases:
-1. **Plan** — LLM generates a development plan
-2. **Decompose** — Break into atomic tasks
-3. **Define Contracts** — Generate interface specifications between modules
-4. **Execute** — Run each task with the contract as shared context
+The retry reads existing files first, then re-executes only failed tasks with full code context.
+
+### Step 4: Run the generated app
+
+```bash
+cd demo/student_mgmt && python main.py
+```
+
+### Programmatic Usage
 
 ```python
-from simple_agent import SimpleAgent, DevWorkflow, Prompts
+from simple_agent import SimpleAgent, DevWorkflow
 from simple_agent.tools import WriteTool, ReadTool, EditTool, GrepTool, BashTool
 
 agent = SimpleAgent(max_failures=3)
@@ -83,7 +117,15 @@ agent.register_tool(GrepTool(working_dir="my_project"))
 agent.register_tool(BashTool(working_dir="my_project"))
 
 wf = DevWorkflow(agent, report_dir="my_project/.reports")
-wf.run_all("Build a REST API with Flask...")
+
+requirement = "Build a REST API with Flask and SQLite..."
+wf.plan_task(requirement)
+wf.decompose(requirement)
+wf.define_contracts(requirement)
+wf.execute(max_steps_per_task=8)
+
+# Or use the convenience method
+wf.run_all(requirement)
 ```
 
 ## Configurable Prompts & Messages
