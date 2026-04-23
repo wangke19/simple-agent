@@ -11,6 +11,9 @@ class AgentConfig:
     model: str
     max_steps: int = 5
     log_level: str = "INFO"
+    max_context_tokens: int = 100000
+    compact_threshold: float = 0.8
+    keep_recent_messages: int = 4
 
     @classmethod
     def from_env(cls) -> AgentConfig:
@@ -23,6 +26,9 @@ class AgentConfig:
             model=os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-20250514"),
             max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
             log_level=os.getenv("AGENT_LOG_LEVEL", "INFO"),
+            max_context_tokens=int(os.getenv("AGENT_MAX_CONTEXT_TOKENS", "100000")),
+            compact_threshold=float(os.getenv("AGENT_COMPACT_THRESHOLD", "0.8")),
+            keep_recent_messages=int(os.getenv("AGENT_KEEP_RECENT_MESSAGES", "4")),
         )
 
 

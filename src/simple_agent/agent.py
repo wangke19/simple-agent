@@ -6,6 +6,7 @@ from typing import Any
 import anthropic
 
 from simple_agent.config import AgentConfig
+from simple_agent.compactor import compact_messages
 from simple_agent.exceptions import ToolError
 from simple_agent.llm_client import LLMClient
 from simple_agent.tools.base import BaseTool
@@ -47,6 +48,14 @@ class SimpleAgent:
 
         for step in range(steps):
             logger.info("Step %d/%d", step + 1, steps)
+
+            self._messages = compact_messages(
+                self._messages,
+                keep_recent=self._config.keep_recent_messages,
+                llm=self._llm,
+                max_context_tokens=self._config.max_context_tokens,
+                compact_threshold=self._config.compact_threshold,
+            )
 
             response = self._llm.call(
                 system_prompt=system_prompt,
