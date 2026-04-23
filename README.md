@@ -1,35 +1,28 @@
 # Simple Agent
 
-A minimal AI agent framework demonstrating the core observe-decide-act loop with tool-calling capabilities.
+A minimal AI agent framework with tool-calling, multi-step workflows, and configurable prompts. Works with any Anthropic-compatible API (Anthropic Claude, ZhiPu glm, etc.).
 
 ## How It Works
 
 ```
 User Task → Agent constructs prompt (tools + history) → LLM decides action
-                        ↑                                       │
-                        │                            ┌──────────┴──────────┐
-                        │                            │                     │
-                        │                        Tool Call             Direct Answer
-                        │                            │                     │
-                        │                     Execute Tool                │
-                        │                            │                     │
-                        └────── Append result ────────┘                    │
-                                                                         ▼
-                                                                    Return Result
+                       ↑                                       │
+                       │                            ┌──────────┴──────────┐
+                       │                            │                     │
+                       │                        Tool Call             Direct Answer
+                       │                            │                     │
+                       │                     Execute Tool                │
+                       │                            │                     │
+                       └──── Append result ──────────┘                    │
+                                                                      ▼
+                                                                 Return Result
 ```
-
-The agent runs a bounded decision loop. At each step, the LLM either calls a registered tool or returns a final answer. Tool results are appended to the conversation history, and the LLM is called again until it produces an answer or the step limit is reached.
 
 ## Quick Start
 
 ```bash
-# Install
 pip install -e .
-
-# Configure (copy and edit)
-cp .env.example .env
-
-# Run demo
+cp .env.example .env   # edit with your API key
 python main.py
 ```
 
@@ -42,10 +35,8 @@ Set environment variables in `.env`:
 | `ANTHROPIC_BASE_URL` | API base URL | `https://api.anthropic.com` |
 | `ANTHROPIC_AUTH_TOKEN` | API key (required) | — |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | Model name | `claude-sonnet-4-20250514` |
-| `AGENT_MAX_STEPS` | Max decision loop steps | `5` |
-| `AGENT_LOG_LEVEL` | Logging level | `INFO` |
 
-## Usage
+## Basic Usage
 
 ```python
 from dotenv import load_dotenv
@@ -58,55 +49,151 @@ agent = SimpleAgent()
 agent.register_tool(SearchTool())
 agent.register_tool(CalculatorTool())
 
-result = agent.run("北京今天天气怎么样？")
+result = agent.run("What is 2^10 + 3*7?")
 print(result)
 ```
 
-## Creating Custom Tools
+## DevWorkflow: Build Applications from Requirements
 
-Subclass `BaseTool`:
+The framework includes a workflow engine that can build complete applications from a requirement file:
+
+```bash
+# Create a requirement file
+python build_with_workflow.py student_mgmt.md
+
+# Retry failed tasks
+python build_with_workflow.py student_mgmt.md --retry
+```
+
+The workflow runs 4 phases:
+1. **Plan** — LLM generates a development plan
+2. **Decompose** — Break into atomic tasks
+3. **Define Contracts** — Generate interface specifications between modules
+4. **Execute** — Run each task with the contract as shared context
+
+```python
+from simple_agent import SimpleAgent, DevWorkflow, Prompts
+from simple_agent.tools import WriteTool, ReadTool, EditTool, GrepTool, BashTool
+
+agent = SimpleAgent(max_failures=3)
+agent.register_tool(WriteTool(working_dir="my_project"))
+agent.register_tool(ReadTool(working_dir="my_project"))
+agent.register_tool(EditTool(working_dir="my_project"))
+agent.register_tool(GrepTool(working_dir="my_project"))
+agent.register_tool(BashTool(working_dir="my_project"))
+
+wf = DevWorkflow(agent, report_dir="my_project/.reports")
+wf.run_all("Build a REST API with Flask...")
+```
+
+## Configurable Prompts & Messages
+
+All prompts and messages have English defaults with full customization:
+
+```python
+from simple_agent import SimpleAgent, Prompts, Messages
+from simple_agent.prompts import chinese_prompts
+from simple_agent.messages import chinese_messages
+
+# English defaults (default)
+agent = SimpleAgent()
+
+# Chinese backward compatibility
+agent = SimpleAgent(prompts=chinese_prompts(), messages=chinese_messages())
+
+# Custom prompts
+prompts = Prompts(
+    default_system_prompt="You are a Python expert...",
+)
+agent = SimpleAgent(prompts=prompts)
+```
+
+## Creating Custom Tools
 
 ```python
 from simple_agent.tools.base import BaseTool
 
 class TranslateTool(BaseTool):
     name = "translate"
-    description = "翻译文本"
 
-    def execute(self, input: str) -> str:
-        # your implementation
+    @property
+    def _default_description(self) -> str:
+        return "Translate text between languages."
+
+    @property
+    def parameters(self):
+        return {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to translate"},
+                "target_lang": {"type": "string", "description": "Target language"},
+            },
+            "required": ["text", "target_lang"],
+        }
+
+    def execute(self, **kwargs) -> str:
         return translated_text
 
 agent.register_tool(TranslateTool())
 ```
 
+## WorkflowConfig
+
+Control which phases run:
+
+```python
+from simple_agent.dev_workflow import WorkflowConfig
+
+# Skip contract generation for simple tasks
+config = WorkflowConfig(enable_contracts=False, max_steps_per_task=12)
+wf = DevWorkflow(agent, workflow_config=config)
+```
+
+## Built-in Tools
+
+| Tool | Name | Description |
+|------|------|-------------|
+| `WriteTool` | `file_write` | Create or overwrite files |
+| `ReadTool` | `file_read` | Read file contents with line range |
+| `EditTool` | `file_edit` | Replace unique strings in files |
+| `GrepTool` | `file_grep` | Search file contents with regex |
+| `BashTool` | `bash` | Execute shell commands |
+| `CalculatorTool` | `calculate` | Evaluate math expressions |
+| `SearchTool` | `search` | Search for information (placeholder) |
+| `MemoryTool` | `memory` | Save/recall cross-session info |
+
 ## Project Structure
 
 ```
 src/simple_agent/
-├── agent.py          # Decision loop orchestrator
-├── config.py         # AgentConfig dataclass, reads from env
-├── llm_client.py     # Anthropic SDK wrapper with error handling
-├── exceptions.py     # AgentError, LLMError, ToolError, ResponseParseError
-├── prompts.py        # System prompt template
+├── __init__.py        # Public API exports
+├── agent.py           # SimpleAgent: decision loop with failure tracking & pause/resume
+├── config.py          # AgentConfig dataclass from environment
+├── llm_client.py      # Anthropic SDK wrapper
+├── dev_workflow.py     # DevWorkflow, WorkflowConfig: plan → decompose → contracts → execute
+├── prompts.py         # Prompts dataclass + chinese_prompts()
+├── messages.py        # Messages dataclass + chinese_messages()
+├── compactor.py       # Context window compaction via LLM summarization
+├── task_report.py     # TaskReport: markdown execution log & checklist
+├── exceptions.py      # AgentError, LLMError, ToolError
 └── tools/
-    ├── base.py       # BaseTool ABC (name, description, execute)
-    ├── registry.py   # ToolRegistry (register, get, format_descriptions)
-    ├── search.py     # SearchTool (mock)
-    └── calculator.py # CalculatorTool
+    ├── base.py        # BaseTool ABC
+    ├── registry.py    # ToolRegistry
+    ├── bash.py        # BashTool with command denylist
+    ├── file_read.py   # ReadTool with path sandboxing
+    ├── file_write.py  # WriteTool with auto-mkdir
+    ├── file_edit.py   # EditTool with unique match enforcement
+    ├── file_grep.py   # GrepTool with regex + glob
+    ├── calculator.py  # CalculatorTool
+    ├── search.py      # SearchTool (placeholder)
+    └── memory.py      # MemoryTool with .agent/memory.md persistence
 ```
 
 ## Testing
 
 ```bash
-# Unit tests (mocked LLM)
-python -m pytest tests/unit/ -v
-
-# Integration tests (real API)
-python -m pytest tests/integration/ -v
-
-# All tests
-python -m pytest tests/ -v
+python -m pytest tests/unit/ -v          # 121 unit tests (mocked LLM)
+python -m pytest tests/integration/ -v   # Integration tests (real API)
 ```
 
 ## Requirements
