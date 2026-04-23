@@ -27,6 +27,7 @@ class SimpleAgent:
         self._llm = llm_client or LLMClient(self._config)
         self._tools = tool_registry or ToolRegistry()
         self._messages: list[dict[str, Any]] = []
+        self._system_prompt: str | None = None
 
     def register_tool(self, tool: BaseTool) -> None:
         self._tools.register(tool)
@@ -38,7 +39,7 @@ class SimpleAgent:
     def run(self, task: str, max_steps: int | None = None) -> str:
         steps = max_steps or self._config.max_steps
         self._messages.append({"role": "user", "content": task})
-        system_prompt = "你是一个AI助手，可以使用工具来完成任务。请根据需要调用工具，或直接给出答案。"
+        system_prompt = self._system_prompt or "你是一个AI助手，可以使用工具来完成任务。请根据需要调用工具，或直接给出答案。"
         memory_tool = self._tools.get("memory") if "memory" in [t.name for t in self._tools.list_tools()] else None
         if memory_tool and isinstance(memory_tool, MemoryTool):
             memory_context = memory_tool.load_into_system_prompt()

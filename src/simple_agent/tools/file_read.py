@@ -25,7 +25,7 @@ class ReadTool(BaseTool):
         }
 
     def execute(self, **kwargs) -> str:
-        path = self._resolve(kwargs["path"])
+        path = self._resolve(kwargs.get("path") or kwargs.get("filename") or kwargs.get("file_path", ""))
         offset = kwargs.get("offset")
         limit = kwargs.get("limit")
 
