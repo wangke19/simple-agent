@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import anthropic
 
@@ -18,15 +19,24 @@ class LLMClient:
         )
         self._model = config.model
 
-    def call(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
+    def call(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> anthropic.Message:
         logger.debug("Sending request to model: %s", self._model)
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
         try:
-            response = self._client.messages.create(
-                model=self._model,
-                max_tokens=1024,
-                system=system_prompt,
-                messages=messages,
-            )
+            response = self._client.messages.create(**kwargs)
         except anthropic.APIConnectionError as e:
             raise LLMError(f"Connection error: {e}") from e
         except anthropic.RateLimitError as e:
@@ -34,6 +44,5 @@ class LLMClient:
         except anthropic.APIStatusError as e:
             raise LLMError(f"API error (status {e.status_code}): {e}") from e
 
-        text = response.content[0].text
-        logger.debug("Response received: %d chars", len(text))
-        return text
+        logger.debug("Response received, %d content blocks", len(response.content))
+        return response

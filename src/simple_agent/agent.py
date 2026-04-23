@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
+from typing import Any
+
+import anthropic
 
 from simple_agent.config import AgentConfig
-from simple_agent.exceptions import ResponseParseError, ToolError
+from simple_agent.exceptions import ToolError
 from simple_agent.llm_client import LLMClient
-from simple_agent.prompts import build_system_prompt
 from simple_agent.tools.base import BaseTool
 from simple_agent.tools.registry import ToolRegistry
 
@@ -23,7 +24,7 @@ class SimpleAgent:
         self._config = config or AgentConfig.from_env()
         self._llm = llm_client or LLMClient(self._config)
         self._tools = tool_registry or ToolRegistry()
-        self._messages: list[dict[str, str]] = []
+        self._messages: list[dict[str, Any]] = []
 
     def register_tool(self, tool: BaseTool) -> None:
         self._tools.register(tool)
@@ -31,46 +32,70 @@ class SimpleAgent:
     def run(self, task: str, max_steps: int | None = None) -> str:
         steps = max_steps or self._config.max_steps
         self._messages = [{"role": "user", "content": task}]
-        system_prompt = build_system_prompt(self._tools.format_descriptions())
+        system_prompt = "你是一个AI助手，可以使用工具来完成任务。请根据需要调用工具，或直接给出答案。"
+        api_tools = self._tools.to_api_format()
 
         for step in range(steps):
             logger.info("Step %d/%d", step + 1, steps)
 
-            try:
-                raw = self._llm.call(system_prompt, self._messages)
-                decision = json.loads(raw)
-            except json.JSONDecodeError as e:
-                logger.warning("Failed to parse LLM response: %s", raw[:200])
-                self._messages.append({
-                    "role": "assistant",
-                    "content": f"JSON解析错误，请重新回复。原始错误：{e}",
-                })
-                continue
-            except ResponseParseError:
-                raise
+            response = self._llm.call(
+                system_prompt=system_prompt,
+                messages=self._messages,
+                tools=api_tools or None,
+            )
 
-            if decision.get("type") == "answer":
-                return decision["content"]
+            # Process response content blocks
+            tool_calls: list[dict[str, Any]] = []
+            text_parts: list[str] = []
 
-            if decision.get("type") == "tool":
-                result = self._execute_tool(decision["tool"], decision["input"])
-                self._messages.append({
-                    "role": "assistant",
-                    "content": f"工具 {decision['tool']} 返回：{result}",
+            for block in response.content:
+                if block.type == "text":
+                    text_parts.append(block.text)
+                elif block.type == "tool_use":
+                    tool_calls.append({
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    })
+
+            if not tool_calls:
+                # No tool calls — LLM is done, return text answer
+                return "\n".join(text_parts)
+
+            # Execute tool calls and build assistant message + tool results
+            assistant_content: list[dict[str, Any]] = []
+            tool_result_content: list[dict[str, Any]] = []
+
+            for block in response.content:
+                assistant_content.append({"type": block.type, **_block_to_dict(block)})
+
+            self._messages.append({"role": "assistant", "content": assistant_content})
+
+            for tc in tool_calls:
+                result = self._execute_tool(tc["name"], tc["input"])
+                tool_result_content.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc["id"],
+                    "content": result,
                 })
-            else:
-                logger.warning("Unknown decision type: %s", decision.get("type"))
-                self._messages.append({
-                    "role": "assistant",
-                    "content": "未知的决策类型，请使用正确的JSON格式回复。",
-                })
+
+            self._messages.append({"role": "user", "content": tool_result_content})
 
         return "超过最大步数"
 
-    def _execute_tool(self, name: str, tool_input: str) -> str:
+    def _execute_tool(self, name: str, tool_input: dict[str, Any]) -> str:
         try:
             tool = self._tools.get(name)
-            return tool.execute(tool_input)
+            return tool.execute(**tool_input)
         except ToolError as e:
             logger.warning("Tool error: %s", e)
             return f"工具错误：{e}"
+
+
+def _block_to_dict(block: Any) -> dict[str, Any]:
+    """Convert an Anthropic content block to a dict for message history."""
+    if block.type == "text":
+        return {"text": block.text}
+    elif block.type == "tool_use":
+        return {"id": block.id, "name": block.name, "input": block.input}
+    return {}

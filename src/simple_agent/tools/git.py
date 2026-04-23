@@ -29,8 +29,18 @@ class GitTool(BaseTool):
     name = "git"
     description = "执行安全的只读git命令（status, log, diff, branch, show, remote, stash list, tag）"
 
-    def execute(self, input: str) -> str:
-        cmd = _validate(input)
+    @property
+    def parameters(self):
+        return {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "Git命令（如 status, log --oneline -5, diff）"},
+            },
+            "required": ["input"],
+        }
+
+    def execute(self, **kwargs) -> str:
+        cmd = _validate(kwargs.get("input", ""))
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=30,

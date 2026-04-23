@@ -14,7 +14,7 @@ def main():
     agent.register_tool(CalculatorTool())
     agent.register_tool(GitTool())
 
-    result = agent.run("这个项目最近3条提交记录是什么？")
+    result = agent.run("北京今天天气怎么样？把温度换算成华氏度")
     print(result)
 
 

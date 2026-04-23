@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from simple_agent.exceptions import ToolError
 from simple_agent.tools.base import BaseTool
@@ -26,8 +27,13 @@ class ToolRegistry:
     def list_tools(self) -> list[BaseTool]:
         return list(self._tools.values())
 
-    def format_descriptions(self) -> str:
-        return "\n".join(
-            f"- {tool.name}: {tool.description}"
+    def to_api_format(self) -> list[dict[str, Any]]:
+        """Convert all tools to Anthropic tool definition format."""
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.parameters,
+            }
             for tool in self._tools.values()
-        )
+        ]

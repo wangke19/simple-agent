@@ -23,13 +23,18 @@ class TestToolRegistry:
         with pytest.raises(ToolError, match="Unknown tool"):
             registry.get("nonexistent")
 
-    def test_format_descriptions(self):
+    def test_to_api_format(self):
         registry = ToolRegistry()
         registry.register(SearchTool())
         registry.register(CalculatorTool())
-        desc = registry.format_descriptions()
-        assert "search: 搜索信息" in desc
-        assert "calculate: 计算数学表达式" in desc
+        api_tools = registry.to_api_format()
+        assert len(api_tools) == 2
+        names = {t["name"] for t in api_tools}
+        assert names == {"search", "calculate"}
+        for t in api_tools:
+            assert "name" in t
+            assert "description" in t
+            assert "input_schema" in t
 
     def test_list_tools(self):
         registry = ToolRegistry()
@@ -40,7 +45,7 @@ class TestToolRegistry:
 class TestSearchTool:
     def test_execute(self):
         tool = SearchTool()
-        result = tool.execute("北京天气")
+        result = tool.execute(input="北京天气")
         assert "北京" in result
         assert "25度" in result
 
@@ -49,19 +54,31 @@ class TestSearchTool:
         assert tool.name == "search"
         assert tool.description == "搜索信息"
 
+    def test_parameters_schema(self):
+        tool = SearchTool()
+        schema = tool.parameters
+        assert schema["type"] == "object"
+        assert "input" in schema["properties"]
+
 
 class TestCalculatorTool:
     def test_execute(self):
         tool = CalculatorTool()
-        assert tool.execute("2 + 3") == "5"
-        assert tool.execute("10 * 2") == "20"
+        assert tool.execute(input="2 + 3") == "5"
+        assert tool.execute(input="10 * 2") == "20"
 
     def test_execute_invalid_raises(self):
         tool = CalculatorTool()
         with pytest.raises(ToolError, match="计算错误"):
-            tool.execute("invalid_expr__$%")
+            tool.execute(input="invalid_expr__$%")
 
     def test_properties(self):
         tool = CalculatorTool()
         assert tool.name == "calculate"
         assert tool.description == "计算数学表达式"
+
+    def test_parameters_schema(self):
+        tool = CalculatorTool()
+        schema = tool.parameters
+        assert schema["type"] == "object"
+        assert "input" in schema["properties"]

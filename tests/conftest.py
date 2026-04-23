@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,11 +7,25 @@ from simple_agent.llm_client import LLMClient
 from simple_agent.tools import CalculatorTool, SearchTool, ToolRegistry
 
 
-def make_llm_response(content: str) -> MagicMock:
+def make_text_block(text: str) -> MagicMock:
     block = MagicMock()
-    block.text = content
+    block.type = "text"
+    block.text = text
+    return block
+
+
+def make_tool_use_block(tool_name: str, tool_input: dict, block_id: str = "tu_123") -> MagicMock:
+    block = MagicMock()
+    block.type = "tool_use"
+    block.id = block_id
+    block.name = tool_name
+    block.input = tool_input
+    return block
+
+
+def make_response(blocks: list) -> MagicMock:
     resp = MagicMock()
-    resp.content = [block]
+    resp.content = blocks
     return resp
 
 
@@ -28,7 +41,6 @@ def config():
 @pytest.fixture
 def mock_llm(config):
     client = MagicMock(spec=LLMClient)
-    client._config = config
     return client
 
 

@@ -7,5 +7,6 @@ class SearchTool(BaseTool):
     name = "search"
     description = "搜索信息"
 
-    def execute(self, input: str) -> str:
-        return f"搜索'{input}'的结果：今天北京晴天，25度"
+    def execute(self, **kwargs) -> str:
+        query = kwargs.get("input", "")
+        return f"搜索'{query}'的结果：今天北京晴天，25度"

@@ -19,15 +19,31 @@ def mock_anthropic_client(config):
         yield mock_client, config
 
 
-def test_call_returns_text(mock_anthropic_client):
+def test_call_returns_message(mock_anthropic_client):
     mock_client, config = mock_anthropic_client
     block = MagicMock()
+    block.type = "text"
     block.text = "hello"
     mock_client.messages.create.return_value = MagicMock(content=[block])
 
     client = LLMClient(config)
-    result = client.call("system prompt", [{"role": "user", "content": "hi"}])
-    assert result == "hello"
+    response = client.call("system prompt", [{"role": "user", "content": "hi"}])
+    assert response.content[0].text == "hello"
+
+
+def test_call_with_tools(mock_anthropic_client):
+    mock_client, config = mock_anthropic_client
+    block = MagicMock()
+    block.type = "text"
+    block.text = "ok"
+    mock_client.messages.create.return_value = MagicMock(content=[block])
+
+    client = LLMClient(config)
+    tools = [{"name": "test", "description": "desc", "input_schema": {}}]
+    client.call("sys", [], tools=tools)
+
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert "tools" in call_kwargs
 
 
 def test_api_connection_error(mock_anthropic_client):

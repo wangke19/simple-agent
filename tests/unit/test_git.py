@@ -22,7 +22,7 @@ def test_execute_status(tool):
         mock_run.return_value = subprocess.CompletedProcess(
             args=["git", "status"], returncode=0, stdout="On branch main\nnothing to commit", stderr=""
         )
-        result = tool.execute("git status")
+        result = tool.execute(input="git status")
         assert "main" in result
 
 
@@ -31,7 +31,7 @@ def test_execute_auto_prepends_git(tool):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="ok", stderr=""
         )
-        tool.execute("log --oneline")
+        tool.execute(input="log --oneline")
         mock_run.assert_called_once()
         assert mock_run.call_args.args[0] == "git log --oneline"
 
@@ -41,7 +41,7 @@ def test_execute_diff(tool):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="+new line\n-old line", stderr=""
         )
-        result = tool.execute("git diff")
+        result = tool.execute(input="git diff")
         assert "+new line" in result
 
 
@@ -50,7 +50,7 @@ def test_execute_empty_output(tool):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        result = tool.execute("git stash list")
+        result = tool.execute(input="git stash list")
         assert result == "(no output)"
 
 
@@ -60,29 +60,29 @@ def test_git_error(tool):
             args=[], returncode=128, stdout="", stderr="fatal: not a git repository"
         )
         with pytest.raises(ToolError, match="not a git repository"):
-            tool.execute("git status")
+            tool.execute(input="git status")
 
 
 def test_disallowed_command(tool):
     with pytest.raises(ToolError, match="not allowed"):
-        tool.execute("git push --force")
+        tool.execute(input="git push --force")
 
 
 def test_disallowed_reset(tool):
     with pytest.raises(ToolError, match="not allowed"):
-        tool.execute("git reset --hard")
+        tool.execute(input="git reset --hard")
 
 
 def test_disallowed_rm(tool):
     with pytest.raises(ToolError, match="not allowed"):
-        tool.execute("git rm -rf .")
+        tool.execute(input="git rm -rf .")
 
 
 def test_timeout(tool):
     with patch("simple_agent.tools.git.subprocess.run") as mock_run:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git log", timeout=30)
         with pytest.raises(ToolError, match="timed out"):
-            tool.execute("git log")
+            tool.execute(input="git log")
 
 
 def test_allowed_commands_cover_readonly():
