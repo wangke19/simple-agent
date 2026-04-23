@@ -49,9 +49,9 @@ def test_messages_history_grows(agent, mock_llm):
     # Second call should have: user, assistant (tool_use), user (tool_result)
     second_call_msgs = mock_llm.call.call_args_list[1].kwargs["messages"]
     assert len(second_call_msgs) == 3
-    assert second_call_msgs[0]["role"] == "user"  # original task
-    assert second_call_msgs[1]["role"] == "assistant"  # tool_use
-    assert second_call_msgs[2]["role"] == "user"  # tool_result
+    assert second_call_msgs[0]["role"] == "user"
+    assert second_call_msgs[1]["role"] == "assistant"
+    assert second_call_msgs[2]["role"] == "user"
 
 
 def test_unknown_tool_name(agent, mock_llm):
@@ -72,3 +72,34 @@ def test_tools_sent_to_api(agent, mock_llm):
     names = {t["name"] for t in tools}
     assert "search" in names
     assert "calculate" in names
+
+
+def test_multi_turn_conversation(agent, mock_llm):
+    mock_llm.call.side_effect = [
+        make_response([make_text_block("北京晴天")]),
+        make_response([make_text_block("是的，北京今天天气不错")]),
+    ]
+    agent.run("北京天气如何？")
+    result = agent.run("刚才你说的是什么？")
+
+    # Second call should see both user messages
+    second_msgs = mock_llm.call.call_args_list[1].kwargs["messages"]
+    user_msgs = [m for m in second_msgs if m["role"] == "user"]
+    assert len(user_msgs) == 2
+
+    assert "天气" in result
+
+
+def test_reset_clears_history(agent, mock_llm):
+    mock_llm.call.return_value = make_response([make_text_block("ok")])
+    agent.run("first")
+    assert len(agent._messages) > 0
+
+    agent.reset()
+    assert len(agent._messages) == 0
+
+    agent.run("second")
+    # After reset, first call of new conversation should only have 1 user message
+    first_msgs = mock_llm.call.call_args_list[-1].kwargs["messages"]
+    user_msgs = [m for m in first_msgs if m["role"] == "user"]
+    assert len(user_msgs) == 1

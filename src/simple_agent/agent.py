@@ -29,9 +29,13 @@ class SimpleAgent:
     def register_tool(self, tool: BaseTool) -> None:
         self._tools.register(tool)
 
+    def reset(self) -> None:
+        """Clear conversation history."""
+        self._messages = []
+
     def run(self, task: str, max_steps: int | None = None) -> str:
         steps = max_steps or self._config.max_steps
-        self._messages = [{"role": "user", "content": task}]
+        self._messages.append({"role": "user", "content": task})
         system_prompt = "你是一个AI助手，可以使用工具来完成任务。请根据需要调用工具，或直接给出答案。"
         api_tools = self._tools.to_api_format()
 
