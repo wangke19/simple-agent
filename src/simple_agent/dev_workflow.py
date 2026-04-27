@@ -74,7 +74,7 @@ class DevWorkflow:
     @property
     def failed_task_indices(self) -> list[int]:
         """Return 0-based indices of failed tasks."""
-        return [i for i, r in enumerate(self._task_results) if r["status"] != "completed"]
+        return [i for i, r in enumerate(self._task_results) if r["status"] not in ("completed", "skipped")]
 
     def run_all(self, requirement: str) -> str:
         """Execute all enabled phases in sequence."""
@@ -190,6 +190,10 @@ class DevWorkflow:
             elif task_failures > 0 and status != "paused":
                 status = "failed"
 
+            task_item.status = status
+            if status == "failed":
+                task_item.retry_count += 1
+
             self._task_results.append({
                 "index": i + 1,
                 "task": task_item.description,
@@ -197,6 +201,7 @@ class DevWorkflow:
                 "result": task_report,
                 "steps": self._agent.report.total_steps if self._agent.report else 0,
                 "failures": task_failures,
+                "retry_count": task_item.retry_count,
             })
 
             if self._agent.report:
@@ -240,11 +245,14 @@ class DevWorkflow:
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
 
+            task_item.status = status
+
             self._task_results.append({
                 "index": i + 1,
                 "task": task_item.description,
                 "status": status,
                 "result": task_report,
+                "retry_count": task_item.retry_count,
             })
 
             if self._agent.report:
@@ -257,7 +265,7 @@ class DevWorkflow:
         return self._finalize_report()
 
     def retry_failed(self, max_steps_per_task: int | None = None) -> str:
-        """Re-execute only the failed tasks, with file-reading preamble."""
+        """Re-execute only the failed tasks, with file-reading preamble and retry boundary."""
         steps = max_steps_per_task or self._config.max_steps_per_task
         failed = self.failed_task_indices
         if not failed:
@@ -272,7 +280,6 @@ class DevWorkflow:
                 contract=self._contract,
             )
 
-        # Build context: list completed tasks + which files exist
         completed_tasks = [
             f"  {r['index']}. {r['task']}" for r in self._task_results
             if r["status"] == "completed"
@@ -302,6 +309,24 @@ class DevWorkflow:
 
         for idx in failed:
             task_item = self._tasks[idx]
+
+            if task_item.retry_count >= 3:
+                has_dependents = any(
+                    idx in self._tasks[j].depends_on
+                    for j in range(len(self._tasks))
+                    if j != idx and self._tasks[j].status in ("pending", "failed")
+                )
+                if has_dependents:
+                    logger.warning("Task %d hit 3-retry limit with dependents — pausing", idx + 1)
+                    task_item.status = "failed"
+                    self._task_results[idx]["status"] = "failed"
+                    return self._pause_and_report(idx)
+                else:
+                    logger.warning("Task %d hit 3-retry limit — skipping (no dependents)", idx + 1)
+                    task_item.status = "skipped"
+                    self._task_results[idx]["status"] = "skipped"
+                    continue
+
             logger.info("--- Retry Task %d/%d: %s ---", idx + 1, len(self._tasks), task_item.description[:60])
 
             self._agent.reset()
@@ -309,22 +334,31 @@ class DevWorkflow:
             augmented_task = f"{read_preamble}{task_item.description}{contract_block}{context}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
+            task_failures = self._agent.report.failed_steps if self._agent.report else 0
 
-            # Update the existing task result
+            if status == "failed":
+                pass
+            elif task_failures > 0 and status != "paused":
+                status = "failed"
+
+            task_item.retry_count += 1
+            task_item.status = status
+
             self._task_results[idx] = {
                 "index": idx + 1,
                 "task": task_item.description,
                 "status": status,
                 "result": task_report,
                 "steps": self._agent.report.total_steps if self._agent.report else 0,
-                "failures": self._agent.report.failed_steps if self._agent.report else 0,
+                "failures": task_failures,
+                "retry_count": task_item.retry_count,
             }
 
             if self._agent.report:
                 for step in self._agent.report.steps:
                     self._overall_report.steps.append(step)
 
-            logger.info("Retry Task %d result: %s (status=%s)", idx + 1, task_report[:60], status)
+            logger.info("Retry Task %d result: %s (status=%s, retries=%d)", idx + 1, task_report[:60], status, task_item.retry_count)
 
             if status == "paused":
                 return self._pause_and_report(idx)
@@ -360,16 +394,23 @@ class DevWorkflow:
 
     def _finalize_report(self) -> str:
         completed = sum(1 for r in self._task_results if r["status"] == "completed")
+        skipped = sum(1 for r in self._task_results if r["status"] == "skipped")
         total = len(self._task_results)
         self._overall_report.status = "completed"
         self._overall_report.final_result = self._msgs.workflow_completed.format(
             total=total, passed=completed,
         )
 
-        lines = [f"## Task Checklist ({completed}/{total} passed)", ""]
+        lines = [f"## Task Checklist ({completed}/{total} passed, {skipped} skipped)", ""]
         for r in self._task_results:
-            mark = "x" if r["status"] == "completed" else " "
-            lines.append(f"- [{mark}] Task {r['index']}: {r['task'][:80]}")
+            if r["status"] == "completed":
+                mark = "x"
+            elif r["status"] == "skipped":
+                mark = "~"
+            else:
+                mark = " "
+            retry_info = f" (retries: {r.get('retry_count', 0)})" if r.get('retry_count', 0) > 0 else ""
+            lines.append(f"- [{mark}] Task {r['index']}: {r['task'][:80]}{retry_info}")
 
         if self._contract:
             lines.append("")
