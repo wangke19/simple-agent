@@ -266,3 +266,22 @@ def test_retry_failed_no_failures(mock_agent):
     assert wf.failed_task_indices == []
     result = wf.retry_failed(max_steps_per_task=1)
     assert wf.report.status == "completed"
+
+
+# --- TaskItem tests ---
+
+def test_task_item_defaults():
+    from simple_agent.dev_workflow import TaskItem
+
+    t = TaskItem(index=1, description="Create db.py")
+    assert t.depends_on == []
+    assert t.retry_count == 0
+    assert t.status == "pending"
+
+
+def test_task_item_with_dependencies():
+    from simple_agent.dev_workflow import TaskItem
+
+    t = TaskItem(index=3, description="Create API", depends_on=[0, 1])
+    assert t.depends_on == [0, 1]
+    assert t.index == 3

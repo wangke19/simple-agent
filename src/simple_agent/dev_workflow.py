@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class TaskItem:
+    """A single atomic task with dependency tracking and retry state."""
+    index: int          # 1-based
+    description: str
+    depends_on: list[int] = field(default_factory=list)  # 0-based indices
+    retry_count: int = 0
+    status: str = "pending"  # pending / completed / failed / skipped
+
+
+@dataclass
 class WorkflowConfig:
     """Controls which workflow phases are enabled."""
     enable_plan: bool = True
@@ -172,6 +182,13 @@ class DevWorkflow:
             augmented_task = f"{task_desc}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
+            task_failures = self._agent.report.failed_steps if self._agent.report else 0
+
+            # Mark task as failed if it has significant failures or hit max steps
+            if status == "failed":
+                pass  # already failed
+            elif task_failures > 0 and status != "paused":
+                status = "failed"
 
             self._task_results.append({
                 "index": i + 1,
@@ -179,7 +196,7 @@ class DevWorkflow:
                 "status": status,
                 "result": task_report,
                 "steps": self._agent.report.total_steps if self._agent.report else 0,
-                "failures": self._agent.report.failed_steps if self._agent.report else 0,
+                "failures": task_failures,
             })
 
             if self._agent.report:
