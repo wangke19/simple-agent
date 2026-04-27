@@ -1,7 +1,7 @@
 """Build an app using DevWorkflow: plan → decompose → contracts → execute → report.
 
 Usage:
-    python build_with_workflow.py my_task.md              # full run
+    python build_with_workflow.py my_task.md              # full run (auto-retries failures)
     python build_with_workflow.py my_task.md --retry      # retry failed tasks only
     python build_with_workflow.py my_task.md --show-report # show latest report
     python build_with_workflow.py --list-reports           # list all reports for all tasks
@@ -61,6 +61,13 @@ def _list_all_reports() -> None:
         print(f"  python build_with_workflow.py student_mgmt.md --show-report")
 
 
+def _run_retry(wf: DevWorkflow, max_steps: int) -> None:
+    """Run one retry round for failed tasks."""
+    result = wf.retry_failed(max_steps_per_task=max_steps)
+    print()
+    print(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build an app using DevWorkflow")
     parser.add_argument("requirement", nargs="?", default="requirement.txt",
@@ -69,6 +76,8 @@ def main():
                         help="Retry only failed tasks from the latest report")
     parser.add_argument("--max-steps", type=int, default=8,
                         help="Max steps per task (default: 8)")
+    parser.add_argument("--max-retries", type=int, default=3,
+                        help="Max auto-retry rounds after execute (default: 3)")
     parser.add_argument("--show-report", action="store_true",
                         help="Show the latest report for this task")
     parser.add_argument("--list-reports", action="store_true",
@@ -118,7 +127,7 @@ def main():
     wf = DevWorkflow(agent, report_dir=f"{output_dir}/.reports")
 
     if args.retry:
-        # Retry mode: re-plan, skip completed tasks
+        # Retry mode: re-plan, then retry only failed tasks
         print("=" * 60)
         print(f"Retrying failed tasks for: {stem}")
         print("=" * 60)
@@ -126,9 +135,6 @@ def main():
         wf.plan_task(requirement)
         wf.decompose(requirement)
         wf.define_contracts(requirement)
-        # Mark all tasks as "completed" initially, then retry_failed will re-run the failed ones
-        wf._task_results = [{"index": i + 1, "task": t, "status": "completed", "result": "", "steps": 0, "failures": 0}
-                           for i, t in enumerate(wf._tasks)]
 
         # Read the latest report to find failed tasks
         report_dir = Path(output_dir) / ".reports"
@@ -138,23 +144,27 @@ def main():
             sys.exit(1)
 
         latest = reports[-1].read_text(encoding="utf-8")
-        # Parse failed task numbers from checklist "- [ ] Task N: ..."
         import re
         failed_nums = [int(m) for m in re.findall(r"- \[ \] Task (\d+):", latest)]
+
         if not failed_nums:
-            print("No failed tasks found in the latest report.")
+            # Also try finding "failed" in task status column
+            failed_nums = [int(m) for m in re.findall(r"Task (\d+):.*\| failed \|", latest)]
+
+        if not failed_nums:
+            print("No failed tasks found. All tasks completed successfully.")
             sys.exit(0)
 
         print(f"Failed tasks to retry: {failed_nums}")
-        # Reset those tasks to failed status
+        # Initialize all as completed, mark failed ones
+        wf._task_results = [{"index": i + 1, "task": t.description, "status": "completed", "result": "", "steps": 0, "failures": 0, "retry_count": t.retry_count}
+                           for i, t in enumerate(wf._tasks)]
         for num in failed_nums:
             idx = num - 1
             if idx < len(wf._task_results):
                 wf._task_results[idx]["status"] = "failed"
 
-        result = wf.retry_failed(max_steps_per_task=args.max_steps)
-        print()
-        print(result)
+        _run_retry(wf, args.max_steps)
     else:
         # Full run
         print(f"Requirement loaded from: {args.requirement}")
@@ -193,6 +203,23 @@ def main():
         result = wf.execute(max_steps_per_task=args.max_steps)
         print()
         print(result)
+
+        # Auto-retry failed tasks
+        failed = wf.failed_task_indices
+        if failed and wf.report.status != "paused":
+            for retry_round in range(1, args.max_retries + 1):
+                failed = wf.failed_task_indices
+                if not failed:
+                    break
+                print()
+                print("=" * 60)
+                print(f"Auto-retry round {retry_round}: {len(failed)} failed tasks")
+                print("=" * 60)
+                _run_retry(wf, args.max_steps)
+
+            failed = wf.failed_task_indices
+            if failed:
+                print(f"\nWarning: {len(failed)} tasks still failing after {args.max_retries} retries")
 
     # Final summary
     print()
