@@ -50,7 +50,7 @@ class DevWorkflow:
         self._msgs = messages or Messages()
         self._config = workflow_config or WorkflowConfig()
         self._plan: str = ""
-        self._tasks: list[str] = []
+        self._tasks: list[TaskItem] = []
         self._contract: str = ""
         self._task_results: list[dict[str, Any]] = []
         self._overall_report = TaskReport(task="")
@@ -60,7 +60,7 @@ class DevWorkflow:
         return self._plan
 
     @property
-    def tasks(self) -> list[str]:
+    def tasks(self) -> list[TaskItem]:
         return self._tasks
 
     @property
@@ -111,7 +111,7 @@ class DevWorkflow:
         logger.info("Plan generated: %d tasks", len(self._tasks))
         return self._plan
 
-    def decompose(self, requirement: str) -> list[str]:
+    def decompose(self, requirement: str) -> list[TaskItem]:
         """Phase 2: Decompose into atomic tasks."""
         logger.info("=== Phase 2: Decomposing ===")
 
@@ -150,7 +150,7 @@ class DevWorkflow:
         from simple_agent.tools.registry import ToolRegistry
         self._agent._tools = ToolRegistry()
 
-        task_list = "\n".join(f"{i+1}. {t}" for i, t in enumerate(self._tasks))
+        task_list = "\n".join(f"{i+1}. {t.description}" for i, t in enumerate(self._tasks))
         prompt = self._prompts.contract_context_template.format(
             requirement=requirement, plan=self._plan, task_list=task_list,
         )
@@ -174,12 +174,12 @@ class DevWorkflow:
                 contract=self._contract,
             )
 
-        for i, task_desc in enumerate(self._tasks):
-            logger.info("--- Task %d/%d: %s ---", i + 1, len(self._tasks), task_desc[:60])
+        for i, task_item in enumerate(self._tasks):
+            logger.info("--- Task %d/%d: %s ---", i + 1, len(self._tasks), task_item.description[:60])
 
             self._agent.reset()
 
-            augmented_task = f"{task_desc}{contract_block}"
+            augmented_task = f"{task_item.description}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
             task_failures = self._agent.report.failed_steps if self._agent.report else 0
@@ -192,7 +192,7 @@ class DevWorkflow:
 
             self._task_results.append({
                 "index": i + 1,
-                "task": task_desc,
+                "task": task_item.description,
                 "status": status,
                 "result": task_report,
                 "steps": self._agent.report.total_steps if self._agent.report else 0,
@@ -233,16 +233,16 @@ class DevWorkflow:
 
         last_completed = len(self._task_results)
         for i in range(last_completed, len(self._tasks)):
-            task_desc = self._tasks[i]
+            task_item = self._tasks[i]
             self._agent.reset()
 
-            augmented_task = f"{task_desc}{contract_block}"
+            augmented_task = f"{task_item.description}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
 
             self._task_results.append({
                 "index": i + 1,
-                "task": task_desc,
+                "task": task_item.description,
                 "status": status,
                 "result": task_report,
             })
@@ -301,19 +301,19 @@ class DevWorkflow:
         )
 
         for idx in failed:
-            task_desc = self._tasks[idx]
-            logger.info("--- Retry Task %d/%d: %s ---", idx + 1, len(self._tasks), task_desc[:60])
+            task_item = self._tasks[idx]
+            logger.info("--- Retry Task %d/%d: %s ---", idx + 1, len(self._tasks), task_item.description[:60])
 
             self._agent.reset()
 
-            augmented_task = f"{read_preamble}{task_desc}{contract_block}{context}"
+            augmented_task = f"{read_preamble}{task_item.description}{contract_block}{context}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
 
             # Update the existing task result
             self._task_results[idx] = {
                 "index": idx + 1,
-                "task": task_desc,
+                "task": task_item.description,
                 "status": status,
                 "result": task_report,
                 "steps": self._agent.report.total_steps if self._agent.report else 0,
@@ -341,7 +341,7 @@ class DevWorkflow:
                     filenames.add(m.group(1))
         # Also scan task descriptions for common file patterns
         for t in self._tasks:
-            for m in re.finditer(r'(\w+\.py(?:\w+)?)', t):
+            for m in re.finditer(r'(\w+\.py(?:\w+)?)', t.description):
                 filenames.add(m.group(1))
         return sorted(filenames)
 
@@ -390,12 +390,32 @@ class DevWorkflow:
         logger.info("Report saved to %s", path)
 
     @staticmethod
-    def _parse_tasks(text: str) -> list[str]:
-        """Parse numbered task list from LLM output."""
-        tasks = []
+    def _parse_tasks(text: str) -> list[TaskItem]:
+        """Parse numbered task list from LLM output, extracting dependency annotations."""
+        tasks: list[TaskItem] = []
         for line in text.split("\n"):
             line = line.strip()
             m = re.match(r'^(?:\d+[\.\)]\s*|-\s*\[?\d+\]?\s*|\*\s*)(.+)', line)
-            if m and len(m.group(1).strip()) > 5:
-                tasks.append(m.group(1).strip())
+            if not m or len(m.group(1).strip()) <= 5:
+                continue
+            raw = m.group(1).strip()
+            # Extract [depends: 1, 3] or [depends: none]
+            depends_on: list[int] = []
+            dep_match = re.search(r'\[depends:\s*(.*?)\]', raw, re.IGNORECASE)
+            has_annotation = dep_match is not None
+            if dep_match:
+                dep_text = dep_match.group(1).strip().lower()
+                if dep_text != "none":
+                    depends_on = [int(x.strip()) - 1 for x in dep_text.split(",") if x.strip().isdigit()]
+                raw = re.sub(r'\s*\[depends:\s*.*?\]\s*', '', raw, flags=re.IGNORECASE).strip()
+            task_item = TaskItem(
+                index=len(tasks) + 1,
+                description=raw,
+                depends_on=depends_on,
+            )
+            tasks.append(task_item)
+        # Fallback: if no annotation, depend on previous task
+        for i, t in enumerate(tasks):
+            if not t.depends_on and i > 0:
+                t.depends_on = [i - 1]
         return tasks

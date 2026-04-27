@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from simple_agent.config import AgentConfig
-from simple_agent.dev_workflow import DevWorkflow
+from simple_agent.dev_workflow import DevWorkflow, TaskItem
 from simple_agent import SimpleAgent
 from tests.conftest import make_text_block, make_tool_use_block
 
@@ -18,8 +18,8 @@ def test_parse_tasks_ordered():
     text = "1. 创建 db.py 数据库层\n2. 创建 app.py GUI层\n3. 运行测试验证功能"
     tasks = DevWorkflow._parse_tasks(text)
     assert len(tasks) == 3
-    assert "db.py" in tasks[0]
-    assert "app.py" in tasks[1]
+    assert "db.py" in tasks[0].description
+    assert "app.py" in tasks[1].description
 
 
 def test_parse_tasks_dashes():
@@ -32,7 +32,7 @@ def test_parse_tasks_filters_short():
     text = "1. ok\n2. create database schema with full CRUD\n3. hi"
     tasks = DevWorkflow._parse_tasks(text)
     assert len(tasks) == 1
-    assert "database" in tasks[0]
+    assert "database" in tasks[0].description
 
 
 def test_parse_tasks_empty():
@@ -285,3 +285,37 @@ def test_task_item_with_dependencies():
     t = TaskItem(index=3, description="Create API", depends_on=[0, 1])
     assert t.depends_on == [0, 1]
     assert t.index == 3
+
+
+# --- Task 2: Dependency parsing tests ---
+
+
+def test_parse_tasks_with_dependencies():
+    text = "1. Create db.py database layer [depends: none]\n2. Create app.py GUI [depends: 1]\n3. Run tests [depends: 1, 2]"
+    tasks = DevWorkflow._parse_tasks(text)
+    assert len(tasks) == 3
+    assert isinstance(tasks[0], TaskItem)
+    assert tasks[0].description == "Create db.py database layer"
+    assert tasks[0].depends_on == []
+    assert tasks[0].index == 1
+    assert tasks[1].depends_on == [0]
+    assert tasks[1].index == 2
+    assert tasks[2].depends_on == [0, 1]
+    assert tasks[2].index == 3
+
+
+def test_parse_tasks_no_dependency_annotation_falls_back_to_sequential():
+    text = "1. Create db.py database layer\n2. Create app.py GUI layer\n3. Run tests verification"
+    tasks = DevWorkflow._parse_tasks(text)
+    assert len(tasks) == 3
+    assert tasks[0].depends_on == []
+    assert tasks[1].depends_on == [0]
+    assert tasks[2].depends_on == [1]
+
+
+def test_parse_tasks_mixed_annotations():
+    text = "1. Create db.py [depends: none]\n2. Create app.py\n3. Run tests [depends: 1, 2]"
+    tasks = DevWorkflow._parse_tasks(text)
+    assert tasks[0].depends_on == []
+    assert tasks[1].depends_on == [0]  # fallback: depends on previous
+    assert tasks[2].depends_on == [0, 1]
