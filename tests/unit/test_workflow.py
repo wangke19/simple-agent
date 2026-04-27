@@ -423,6 +423,39 @@ def test_finalize_report_marks_skipped_tasks(mock_agent):
     assert "[~]" in result
 
 
+# --- Filesystem-based _extract_filenames tests ---
+
+def test_extract_filenames_scans_filesystem(tmp_path):
+    """_extract_filenames returns actual .py files from working directory."""
+    (tmp_path / "main.py").write_text("pass")
+    (tmp_path / "database.py").write_text("pass")
+    sub = tmp_path / "ui"
+    sub.mkdir()
+    (sub / "main_window.py").write_text("pass")
+    (sub / "__init__.py").write_text("pass")
+    # Hidden/cache dirs should be skipped
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "main.cpython-310.pyc").write_text("")
+
+    mock_agent = SimpleAgent(config=AgentConfig(base_url="https://fake", api_key="k", model="t"), llm_client=MagicMock())
+    wf = DevWorkflow(mock_agent, working_dir=str(tmp_path))
+    files = wf._extract_filenames()
+
+    assert "main.py" in files
+    assert "database.py" in files
+    assert "ui/main_window.py" in files
+    assert "ui/__init__.py" in files
+    assert not any("__pycache__" in f for f in files)
+
+
+def test_extract_filenames_empty_dir(tmp_path):
+    """Returns empty list for empty directory."""
+    mock_agent = SimpleAgent(config=AgentConfig(base_url="https://fake", api_key="k", model="t"), llm_client=MagicMock())
+    wf = DevWorkflow(mock_agent, working_dir=str(tmp_path))
+    assert wf._extract_filenames() == []
+
+
 # --- New tests for _scan_written_files and _validate_task_output ---
 
 def test_scan_written_files_from_report():

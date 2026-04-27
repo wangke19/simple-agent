@@ -388,18 +388,20 @@ class DevWorkflow:
         return self._finalize_report()
 
     def _extract_filenames(self) -> list[str]:
-        """Extract filenames mentioned in the contract (### filename sections)."""
-        filenames = set()
-        if self._contract:
-            for line in self._contract.split("\n"):
-                m = re.match(r'^###\s+(\S+)', line)
-                if m:
-                    filenames.add(m.group(1))
-        # Also scan task descriptions for common file patterns
-        for t in self._tasks:
-            for m in re.finditer(r'(\w+\.py(?:\w+)?)', t.description):
-                filenames.add(m.group(1))
-        return sorted(filenames)
+        """Scan the working directory for actual .py files."""
+        from pathlib import Path
+        base = Path(self._working_dir)
+        if not base.exists():
+            return []
+        files = []
+        for p in sorted(base.rglob("*.py")):
+            rel = p.relative_to(base)
+            # Skip hidden dirs, __pycache__, site-packages, .reports
+            parts = rel.parts
+            if any(part.startswith(".") or part == "__pycache__" or part == "site-packages" for part in parts):
+                continue
+            files.append(str(rel))
+        return files
 
     def _pause_and_report(self, task_index: int) -> str:
         msg = self._msgs.workflow_paused.format(
