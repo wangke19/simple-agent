@@ -11,9 +11,9 @@ User Task → Agent constructs prompt (tools + history) → LLM decides action
                        │                            │                     │
                        │                        Tool Call             Direct Answer
                        │                            │                     │
-                       │                     Execute Tool                │
+                       │                     Execute Tool                 │
                        │                            │                     │
-                       └──── Append result ──────────┘                    │
+                       └──── Append result ─────────┘                     │
                                                                       ▼
                                                                  Return Result
 ```
