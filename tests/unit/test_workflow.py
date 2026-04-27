@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from simple_agent.config import AgentConfig
 from simple_agent.dev_workflow import DevWorkflow, TaskItem
 from simple_agent import SimpleAgent
+from simple_agent.tools.registry import ToolRegistry
 from tests.conftest import make_text_block, make_tool_use_block
 
 
@@ -11,6 +12,8 @@ from tests.conftest import make_text_block, make_tool_use_block
 def mock_agent():
     config = AgentConfig(base_url="https://fake", api_key="key", model="test")
     agent = SimpleAgent(config=config, llm_client=MagicMock())
+    # Create an empty tool registry so search tool calls will fail
+    agent._tools = ToolRegistry()
     return agent
 
 
@@ -319,3 +322,101 @@ def test_parse_tasks_mixed_annotations():
     assert tasks[0].depends_on == []
     assert tasks[1].depends_on == [0]  # fallback: depends on previous
     assert tasks[2].depends_on == [0, 1]
+
+
+# --- Task 4: Retry boundary tests ---
+
+def test_execute_tracks_retry_count_on_failure(mock_agent):
+    """Failed tasks get retry_count incremented."""
+    # Create a scenario where the agent makes 2 attempts but both fail, causing retry_count increment
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. Task one\n2. Task two")]),
+        # task 1 - first attempt with tool call (fails)
+        MagicMock(content=[make_tool_use_block("search", {"input": "x"})]),
+        # task 2 - success
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+        # retry task 1 - second attempt (still fails)
+        MagicMock(content=[make_tool_use_block("search", {"input": "x"})]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build something")
+    wf.execute(max_steps_per_task=1)
+
+    # Task 1 should have failed and retry_count should be 1
+    task1_result = wf._task_results[0]
+    assert task1_result["status"] == "failed"
+    assert task1_result["retry_count"] == 1
+
+
+def test_retry_failed_skips_after_3_retries_no_dependents(mock_agent):
+    """Task that hit 3-retry limit with no dependents gets skipped."""
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. Independent task A\n2. Independent task B")]),
+        # task 1 - succeeds
+        MagicMock(content=[MagicMock(type="text", text="ok")]),
+        # task 2 - succeeds
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build something")
+    wf.execute(max_steps_per_task=1)
+
+    # Manually set task 1 to have 3 retries already (simulating 3 prior failures)
+    wf._tasks[0].retry_count = 3
+    wf._tasks[0].status = "failed"
+    wf._task_results[0]["status"] = "failed"
+    wf._task_results[0]["retry_count"] = 3
+    # Make task 2 independent (no dependency on task 1)
+    wf._tasks[1].depends_on = []
+
+    result = wf.retry_failed(max_steps_per_task=1)
+    assert wf._tasks[0].status == "skipped"
+    assert wf._task_results[0]["status"] == "skipped"
+
+
+def test_retry_failed_pauses_after_3_retries_with_dependents(mock_agent):
+    """Task that hit 3-retry limit with dependents causes workflow to pause."""
+    mock_agent._llm.call.side_effect = [
+        # plan_task
+        MagicMock(content=[MagicMock(type="text", text="1. DB setup [depends: none]\n2. API layer [depends: 1]")]),
+        # task 1 - succeeds
+        MagicMock(content=[MagicMock(type="text", text="ok")]),
+        # task 2 - succeeds
+        MagicMock(content=[MagicMock(type="text", text="ok")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build something")
+    wf.execute(max_steps_per_task=1)
+
+    # Manually set task 1 to have 3 retries and failed
+    wf._tasks[0].retry_count = 3
+    wf._tasks[0].status = "failed"
+    wf._task_results[0]["status"] = "failed"
+    wf._task_results[0]["retry_count"] = 3
+    # Task 2 depends on task 1 and is still failed
+    wf._tasks[1].depends_on = [0]
+    wf._tasks[1].status = "failed"
+
+    result = wf.retry_failed(max_steps_per_task=1)
+    assert wf.report.status == "paused"
+
+
+def test_finalize_report_marks_skipped_tasks(mock_agent):
+    """Skipped tasks show [~] in checklist."""
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. Task one")]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports")
+    wf.plan_task("build")
+    wf.execute(max_steps_per_task=1)
+
+    wf._task_results[0]["status"] = "skipped"
+    result = wf._finalize_report()
+    assert "[~]" in result
