@@ -477,10 +477,16 @@ class DevWorkflow:
         errors = []
         files = DevWorkflow._scan_written_files(report)
         for filepath in files:
-            module = filepath.replace("/", ".").replace("\\", ".").removesuffix(".py")
+            # Use importlib to load the file directly, avoiding __init__.py cascade
+            check_code = (
+                "import importlib.util, sys; "
+                f"spec = importlib.util.spec_from_file_location('_check', '{filepath}'); "
+                "mod = importlib.util.module_from_spec(spec); "
+                "spec.loader.exec_module(mod)"
+            )
             try:
                 result = subprocess.run(
-                    [sys.executable, "-c", f"import {module}"],
+                    [sys.executable, "-c", check_code],
                     capture_output=True, text=True, timeout=10,
                     cwd=working_dir,
                 )
