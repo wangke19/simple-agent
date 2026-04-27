@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -429,6 +430,42 @@ class DevWorkflow:
         path = Path(self._report_dir) / filename
         self._overall_report.save(path)
         logger.info("Report saved to %s", path)
+
+    @staticmethod
+    def _scan_written_files(report: TaskReport) -> list[str]:
+        """Extract .py file paths written during a task from the report."""
+        files = []
+        if not report:
+            return files
+        for step in report.steps:
+            if (step.action == "tool_call"
+                    and step.tool_name in ("file_write", "WriteTool")
+                    and step.tool_input
+                    and isinstance(step.tool_input, dict)):
+                path = step.tool_input.get("path", "")
+                if path.endswith(".py"):
+                    files.append(path)
+        return files
+
+    @staticmethod
+    def _validate_task_output(report: TaskReport, working_dir: str) -> list[str]:
+        """Run import checks on .py files written during a task. Returns error messages."""
+        import subprocess
+        errors = []
+        files = DevWorkflow._scan_written_files(report)
+        for filepath in files:
+            module = filepath.replace("/", ".").replace("\\", ".").removesuffix(".py")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", f"import {module}"],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=working_dir,
+                )
+                if result.returncode != 0:
+                    errors.append(f"{filepath}: {result.stderr.strip()}")
+            except subprocess.TimeoutExpired:
+                errors.append(f"{filepath}: import check timed out")
+        return errors
 
     @staticmethod
     def _parse_tasks(text: str) -> list[TaskItem]:

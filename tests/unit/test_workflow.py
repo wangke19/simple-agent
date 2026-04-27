@@ -5,6 +5,7 @@ from simple_agent.config import AgentConfig
 from simple_agent.dev_workflow import DevWorkflow, TaskItem
 from simple_agent import SimpleAgent
 from simple_agent.tools.registry import ToolRegistry
+from simple_agent.task_report import TaskReport, StepStatus
 from tests.conftest import make_text_block, make_tool_use_block
 
 
@@ -420,3 +421,62 @@ def test_finalize_report_marks_skipped_tasks(mock_agent):
     wf._task_results[0]["status"] = "skipped"
     result = wf._finalize_report()
     assert "[~]" in result
+
+
+# --- New tests for _scan_written_files and _validate_task_output ---
+
+def test_scan_written_files_from_report():
+    """Extract .py filenames written during a task from agent report steps."""
+    from simple_agent.task_report import TaskReport, StepRecord, StepStatus
+    report = TaskReport(task="test")
+    report.add_step(
+        action="tool_call", tool_name="file_write",
+        tool_input={"path": "database.py", "content": "pass"},
+        status=StepStatus.SUCCESS,
+    )
+    report.add_step(
+        action="tool_call", tool_name="file_write",
+        tool_input={"path": "ui/main_window.py", "content": "pass"},
+        status=StepStatus.SUCCESS,
+    )
+    report.add_step(
+        action="tool_call", tool_name="bash",
+        tool_input={"command": "ls"},
+        status=StepStatus.SUCCESS,
+    )
+    files = DevWorkflow._scan_written_files(report)
+    assert files == ["database.py", "ui/main_window.py"]
+
+
+def test_scan_written_files_empty():
+    from simple_agent.task_report import TaskReport
+    report = TaskReport(task="test")
+    assert DevWorkflow._scan_written_files(report) == []
+
+
+def test_validate_task_output_passes(tmp_path):
+    """Import check passes for a valid .py file."""
+    (tmp_path / "valid.py").write_text("x = 1\n")
+    report = TaskReport(task="test")
+    report.add_step(
+        action="tool_call", tool_name="file_write",
+        tool_input={"path": "valid.py", "content": "x = 1"},
+        status=StepStatus.SUCCESS,
+    )
+    errors = DevWorkflow._validate_task_output(report, str(tmp_path))
+    assert errors == []
+
+
+def test_validate_task_output_catches_import_error(tmp_path):
+    """Import check fails for a file with bad import."""
+    (tmp_path / "bad.py").write_text("from nonexistent_module import foo\n")
+    report = TaskReport(task="test")
+    report.add_step(
+        action="tool_call", tool_name="file_write",
+        tool_input={"path": "bad.py", "content": "from nonexistent_module import foo"},
+        status=StepStatus.SUCCESS,
+    )
+    errors = DevWorkflow._validate_task_output(report, str(tmp_path))
+    assert len(errors) == 1
+    assert "bad.py" in errors[0]
+    assert "nonexistent_module" in errors[0]
