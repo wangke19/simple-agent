@@ -3,6 +3,7 @@
 Usage:
     python build_with_workflow.py my_task.md              # full run (auto-retries failures)
     python build_with_workflow.py my_task.md --retry      # retry failed tasks only
+    python build_with_workflow.py my_task.md --fix        # auto-fix runtime errors
     python build_with_workflow.py my_task.md --show-report # show latest report
     python build_with_workflow.py --list-reports           # list all reports for all tasks
 """
@@ -68,12 +69,114 @@ def _run_retry(wf: DevWorkflow, max_steps: int) -> None:
     print(result)
 
 
+def _parse_traceback(stderr: str) -> list[dict]:
+    """Parse Python tracebacks into structured errors. Returns [{file, line, error}]."""
+    import re
+    errors = []
+    lines = stderr.strip().split("\n")
+    error_msg = ""
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("File ") and not stripped.startswith("During"):
+            error_msg = stripped
+            break
+
+    pattern = r'File "(.+?\.py)", line (\d+)'
+    for match in re.finditer(pattern, stderr):
+        filepath = match.group(1)
+        lineno = match.group(2)
+        if "/site-packages/" not in filepath:
+            errors.append({"file": filepath, "line": int(lineno), "error": error_msg})
+    return errors
+
+
+def _smoke_test(output_dir: str) -> list[str]:
+    """Run the generated app and capture errors. Returns list of error strings."""
+    import subprocess
+    import os
+    output_path = Path(output_dir).resolve()
+
+    main_py = output_path / "main.py"
+    app_py = output_path / "app.py"
+    entry_point = main_py if main_py.exists() else app_py if app_py.exists() else None
+    if not entry_point:
+        return []
+
+    try:
+        env = {"QT_QPA_PLATFORM": "offscreen", "PATH": os.environ.get("PATH", "")}
+        result = subprocess.run(
+            [sys.executable, str(entry_point)],
+            capture_output=True, text=True, timeout=15,
+            cwd=str(output_path), env=env,
+        )
+        if result.returncode != 0 and result.stderr:
+            return [line for line in result.stderr.strip().split("\n") if line.strip()]
+        return []
+    except subprocess.TimeoutExpired:
+        return []  # timeout = app ran (GUI event loop), not an error
+
+
+def _fix_errors(output_dir: str, max_attempts: int = 3) -> None:
+    """Run the app, parse errors, send to LLM for fixing, repeat."""
+    output_path = Path(output_dir).resolve()
+
+    for attempt in range(1, max_attempts + 1):
+        print(f"\n--- Fix attempt {attempt}/{max_attempts} ---")
+        errors = _smoke_test(output_dir)
+        if not errors:
+            print("App runs clean. All errors fixed.")
+            return
+
+        stderr = "\n".join(errors)
+        parsed = _parse_traceback(stderr)
+        if not parsed:
+            print(f"Could not parse errors from:\n{stderr[:500]}")
+            return
+
+        print(f"Found {len(parsed)} error(s):")
+        for e in parsed:
+            print(f"  {Path(e['file']).name}:{e['line']} - {e['error']}")
+
+        agent = SimpleAgent(max_failures=3)
+        agent._system_prompt = (
+            "You are a Python debugging expert. Fix the error in the source code.\n"
+            "Use file_read to read the file, then file_edit to fix it.\n"
+            "Only fix the specific error. Do not refactor or change unrelated code."
+        )
+        agent.register_tool(ReadTool(working_dir=output_dir))
+        agent.register_tool(EditTool(working_dir=output_dir))
+        agent.register_tool(GrepTool(working_dir=output_dir))
+        agent.register_tool(BashTool(working_dir=output_dir, timeout=30))
+
+        for err in parsed:
+            filepath = err["file"]
+            filename = Path(filepath).name
+            prompt = (
+                f"Fix this error in {filename} at line {err['line']}:\n"
+                f"Error: {err['error']}\n\n"
+                f"Read the file first, identify the bug, and fix it with file_edit."
+            )
+            print(f"\nFixing {filename}:{err['line']}...")
+            agent.reset()
+            agent.run(prompt, max_steps=5)
+
+    errors = _smoke_test(output_dir)
+    if errors:
+        print(f"\nWarning: {len(errors)} error(s) remain after {max_attempts} fix attempts")
+        for e in errors[:5]:
+            print(f"  {e}")
+    else:
+        print("App runs clean after fixes.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build an app using DevWorkflow")
     parser.add_argument("requirement", nargs="?", default="requirement.txt",
                         help="Requirement file (default: requirement.txt)")
     parser.add_argument("--retry", action="store_true",
                         help="Retry only failed tasks from the latest report")
+    parser.add_argument("--fix", action="store_true",
+                        help="Auto-fix runtime errors by sending them to the LLM")
     parser.add_argument("--max-steps", type=int, default=8,
                         help="Max steps per task (default: 8)")
     parser.add_argument("--max-retries", type=int, default=3,
@@ -111,6 +214,15 @@ def main():
     if args.show_report:
         _show_report(report_dir)
         return
+
+    # --fix: auto-fix runtime errors
+    if args.fix:
+        print("=" * 60)
+        print(f"Auto-fixing errors for: {output_dir}")
+        print("=" * 60)
+        _fix_errors(output_dir)
+        return
+
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Interactive path confirmation (only for full runs)
@@ -233,6 +345,22 @@ def main():
             failed = wf.failed_task_indices
             if failed:
                 print(f"\nWarning: {len(failed)} tasks still failing after {args.max_retries} retries")
+
+        # Smoke test: run the app to check for startup errors
+        if wf.report.status != "paused":
+            print()
+            print("=" * 60)
+            print("Phase 4: Smoke Test")
+            print("=" * 60)
+            errors = _smoke_test(output_dir)
+            if errors:
+                print(f"Found {len(errors)} error(s) at startup:")
+                for err in errors[:10]:
+                    print(f"  {err}")
+                print(f"\nTo auto-fix these errors, run:")
+                print(f"  python build_with_workflow.py {args.requirement} --fix")
+            else:
+                print("App starts successfully.")
 
     # Final summary
     print()
