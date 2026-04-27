@@ -41,12 +41,14 @@ class DevWorkflow:
         self,
         agent: SimpleAgent,
         report_dir: str = ".agent/reports",
+        working_dir: str = ".",
         prompts: Prompts | None = None,
         messages: Messages | None = None,
         workflow_config: WorkflowConfig | None = None,
     ) -> None:
         self._agent = agent
         self._report_dir = report_dir
+        self._working_dir = working_dir
         self._prompts = prompts or Prompts()
         self._msgs = messages or Messages()
         self._config = workflow_config or WorkflowConfig()
@@ -194,6 +196,16 @@ class DevWorkflow:
             task_item.status = status
             if status == "failed":
                 task_item.retry_count += 1
+
+            # Validate: import check on written files
+            if status not in ("paused",) and self._agent.report:
+                validation_errors = self._validate_task_output(self._agent.report, self._working_dir)
+                if validation_errors:
+                    for err in validation_errors:
+                        logger.warning("Validation error: %s", err)
+                    status = "failed"
+                    task_item.status = "failed"
+                    task_item.retry_count += 1
 
             self._task_results.append({
                 "index": i + 1,
@@ -344,6 +356,15 @@ class DevWorkflow:
 
             task_item.retry_count += 1
             task_item.status = status
+
+            # Validate: import check on written files
+            if status not in ("paused",) and self._agent.report:
+                validation_errors = self._validate_task_output(self._agent.report, self._working_dir)
+                if validation_errors:
+                    for err in validation_errors:
+                        logger.warning("Validation error: %s", err)
+                    status = "failed"
+                    task_item.status = "failed"
 
             self._task_results[idx] = {
                 "index": idx + 1,

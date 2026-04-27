@@ -137,7 +137,7 @@ def main():
     agent.register_tool(GrepTool(working_dir=output_dir))
     agent.register_tool(BashTool(working_dir=output_dir, timeout=30))
 
-    wf = DevWorkflow(agent, report_dir=f"{output_dir}/.reports")
+    wf = DevWorkflow(agent, report_dir=f"{output_dir}/.reports", working_dir=output_dir)
 
     if args.retry:
         # Retry mode: re-plan, then retry only failed tasks

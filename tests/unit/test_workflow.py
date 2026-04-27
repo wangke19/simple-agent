@@ -480,3 +480,22 @@ def test_validate_task_output_catches_import_error(tmp_path):
     assert len(errors) == 1
     assert "bad.py" in errors[0]
     assert "nonexistent_module" in errors[0]
+
+
+def test_execute_marks_failed_on_import_error(mock_agent, tmp_path):
+    """Task that writes a file with import error gets marked failed."""
+    (tmp_path / "bad.py").write_text("from nonexistent_module import foo\n")
+
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. Create bad module")]),
+        MagicMock(content=[
+            make_tool_use_block("file_write", {"path": "bad.py", "content": "from nonexistent_module import foo"}),
+        ]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+    ]
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports", working_dir=str(tmp_path))
+    wf.plan_task("build something")
+    wf.execute(max_steps_per_task=2)
+
+    assert wf._task_results[0]["status"] == "failed"
