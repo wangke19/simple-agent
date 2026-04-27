@@ -347,20 +347,19 @@ def main():
                 print(f"\nWarning: {len(failed)} tasks still failing after {args.max_retries} retries")
 
         # Smoke test: run the app to check for startup errors
-        if wf.report.status != "paused":
-            print()
-            print("=" * 60)
-            print("Phase 4: Smoke Test")
-            print("=" * 60)
-            errors = _smoke_test(output_dir)
-            if errors:
-                print(f"Found {len(errors)} error(s) at startup:")
-                for err in errors[:10]:
-                    print(f"  {err}")
-                print(f"\nTo auto-fix these errors, run:")
-                print(f"  python build_with_workflow.py {args.requirement} --fix")
-            else:
-                print("App starts successfully.")
+        print()
+        print("=" * 60)
+        print("Phase 4: Smoke Test")
+        print("=" * 60)
+        errors = _smoke_test(output_dir)
+        if errors:
+            print(f"Found {len(errors)} error(s) at startup:")
+            for err in errors[:10]:
+                print(f"  {err}")
+            print(f"\nTo auto-fix these errors, run:")
+            print(f"  python build_with_workflow.py {args.requirement} --fix")
+        else:
+            print("App starts successfully.")
 
     # Final summary
     print()
