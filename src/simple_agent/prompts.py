@@ -38,10 +38,12 @@ class Prompts:
         "- Ordered: with clear dependencies\n"
         "\n"
         "Output format (follow strictly), one task per line:\n"
-        "1. Create xxx file with yyy functionality\n"
-        "2. Create zzz file with www functionality\n"
-        "3. Run tests to verify\n"
+        "1. Create xxx file with yyy functionality [depends: none]\n"
+        "2. Create zzz file with www functionality [depends: 1]\n"
+        "3. Run tests to verify [depends: 1, 2]\n"
         "\n"
+        "For each task, add [depends: N, M] listing which task numbers must complete first.\n"
+        "Use [depends: none] for the first task(s) with no prerequisites.\n"
         "Output only the numbered list, nothing else."
     )
     decompose_context_template: str = (
@@ -130,10 +132,12 @@ def chinese_prompts() -> Prompts:
             "- 有序的：有明确的先后依赖\n"
             "\n"
             "输出格式（严格遵守），每行一个任务：\n"
-            "1. 创建 xxx 文件，包含 yyy 功能\n"
-            "2. 创建 zzz 文件，包含 www 功能\n"
-            "3. 运行测试验证\n"
+            "1. 创建 xxx 文件，包含 yyy 功能 [depends: none]\n"
+            "2. 创建 zzz 文件，包含 www 功能 [depends: 1]\n"
+            "3. 运行测试验证 [depends: 1, 2]\n"
             "\n"
+            "每个任务添加 [depends: N, M] 标注其依赖的前置任务编号。\n"
+            "无前置依赖的任务使用 [depends: none]。\n"
             "只输出编号列表，不要其他内容。"
         ),
         decompose_context_template="原始需求：{requirement}\n\n初步计划：\n{plan}",
