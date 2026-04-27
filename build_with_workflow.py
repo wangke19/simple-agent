@@ -78,6 +78,8 @@ def main():
                         help="Max steps per task (default: 8)")
     parser.add_argument("--max-retries", type=int, default=3,
                         help="Max auto-retry rounds after execute (default: 3)")
+    parser.add_argument("-o", "--output-dir",
+                        help="Output directory (default: demo/<spec-stem>)")
     parser.add_argument("--show-report", action="store_true",
                         help="Show the latest report for this task")
     parser.add_argument("--list-reports", action="store_true",
@@ -102,7 +104,7 @@ def main():
         sys.exit(1)
 
     stem = req_path.stem
-    output_dir = f"demo/{stem}"
+    output_dir = args.output_dir or f"demo/{stem}"
     report_dir = Path(output_dir) / ".reports"
 
     # --show-report: display the latest report and exit
@@ -110,6 +112,17 @@ def main():
         _show_report(report_dir)
         return
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Interactive path confirmation (only for full runs)
+    if not args.retry:
+        print(f"\nProject will be created at: {Path(output_dir).resolve()}/")
+        confirm = input("Use this path? [Y/n/custom path]: ").strip()
+        if confirm and confirm.lower() not in ("y", "yes", ""):
+            if confirm.lower() not in ("n", "no"):
+                output_dir = confirm
+            else:
+                output_dir = input("Enter output directory: ").strip()
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     agent = SimpleAgent(max_failures=3)
     agent._system_prompt = (
@@ -230,6 +243,29 @@ def main():
     if wf.report.status == "paused":
         print("\n>>> Agent paused. To resume:")
         print(">>> wf.resume('your guidance here')")
+
+    # Project location and start instructions
+    output_path = Path(output_dir).resolve()
+    print(f"\n{'=' * 60}")
+    print(f"Project location: {output_path}")
+    print(f"{'=' * 60}")
+
+    main_py = output_path / "main.py"
+    app_py = output_path / "app.py"
+    if main_py.exists():
+        print(f"\nTo start the project:")
+        print(f"  cd {output_path}")
+        print(f"  python main.py")
+    elif app_py.exists():
+        print(f"\nTo start the project:")
+        print(f"  cd {output_path}")
+        print(f"  python app.py")
+    else:
+        py_files = sorted(output_path.glob("*.py"))
+        if py_files:
+            print(f"\nPython files in project:")
+            for f in py_files:
+                print(f"  {f.name}")
 
 
 if __name__ == "__main__":
