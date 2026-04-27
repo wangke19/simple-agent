@@ -3,6 +3,8 @@
 Usage:
     python build_with_workflow.py my_task.md              # full run
     python build_with_workflow.py my_task.md --retry      # retry failed tasks only
+    python build_with_workflow.py my_task.md --show-report # show latest report
+    python build_with_workflow.py --list-reports           # list all reports for all tasks
 """
 import argparse
 import logging
@@ -19,6 +21,46 @@ from simple_agent.tools import (
 load_dotenv()
 
 
+def _show_report(report_dir: Path) -> None:
+    """Show the latest report."""
+    reports = sorted(report_dir.glob("report_*.md"))
+    if not reports:
+        print(f"No reports found in {report_dir}")
+        sys.exit(1)
+    print(reports[-1].read_text(encoding="utf-8"))
+
+
+def _list_all_reports() -> None:
+    """List all reports across all demo dirs."""
+    demo_dir = Path(__file__).parent / "demo"
+    if not demo_dir.exists():
+        print("No demo directory found.")
+        return
+
+    found = False
+    for report_dir in sorted(demo_dir.glob("*/.reports")):
+        reports = sorted(report_dir.glob("report_*.md"))
+        if reports:
+            task_name = report_dir.parent.name
+            print(f"\n{task_name}/")
+            for r in reports:
+                # Extract status line from report
+                content = r.read_text(encoding="utf-8")
+                status_line = ""
+                for line in content.split("\n"):
+                    if "**Status**" in line:
+                        status_line = line.strip()
+                        break
+                print(f"  {r.name}  {status_line}")
+            found = True
+
+    if not found:
+        print("No reports found.")
+    else:
+        print(f"\nUse --show-report with a requirement file to view details:")
+        print(f"  python build_with_workflow.py student_mgmt.md --show-report")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build an app using DevWorkflow")
     parser.add_argument("requirement", nargs="?", default="requirement.txt",
@@ -27,7 +69,16 @@ def main():
                         help="Retry only failed tasks from the latest report")
     parser.add_argument("--max-steps", type=int, default=8,
                         help="Max steps per task (default: 8)")
+    parser.add_argument("--show-report", action="store_true",
+                        help="Show the latest report for this task")
+    parser.add_argument("--list-reports", action="store_true",
+                        help="List all reports for all tasks")
     args = parser.parse_args()
+
+    # --list-reports: scan all demo dirs for reports
+    if args.list_reports:
+        _list_all_reports()
+        return
 
     logging.basicConfig(level="INFO")
 
@@ -43,6 +94,12 @@ def main():
 
     stem = req_path.stem
     output_dir = f"demo/{stem}"
+    report_dir = Path(output_dir) / ".reports"
+
+    # --show-report: display the latest report and exit
+    if args.show_report:
+        _show_report(report_dir)
+        return
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     agent = SimpleAgent(max_failures=3)
