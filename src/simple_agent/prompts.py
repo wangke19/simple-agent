@@ -90,6 +90,14 @@ class Prompts:
         "{contract}\n"
         "---"
     )
+    schema_injection_template: str = (
+        "\n\n---\n"
+        "## Database Schema (GROUND TRUTH — all SQL must use these EXACT table and column names)\n"
+        "When writing SQL queries, you MUST use the column names defined below. Do NOT invent column names.\n"
+        "Pay special attention to: primary key column names, foreign key column names, and column naming conventions.\n"
+        "{schema}\n"
+        "---"
+    )
 
     # Compaction
     compact_system_prompt: str = (
@@ -176,6 +184,14 @@ def chinese_prompts() -> Prompts:
             "## 接口契约（以下是你和其他任务共同遵守的接口规范，"
             "必须严格按照契约中的方法名和参数调用）\n"
             "{contract}\n"
+            "---"
+        ),
+        schema_injection_template=(
+            "\n\n---\n"
+            "## 数据库 Schema（以下是最终权威定义 — 所有 SQL 必须使用这里的精确表名和列名）\n"
+            "编写 SQL 查询时，必须使用下面定义的列名，不得自行发明列名。\n"
+            "特别注意：主键列名、外键列名、列命名风格。\n"
+            "{schema}\n"
             "---"
         ),
         compact_system_prompt=(

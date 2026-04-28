@@ -57,6 +57,7 @@ class DevWorkflow:
         self._contract: str = ""
         self._task_results: list[dict[str, Any]] = []
         self._overall_report = TaskReport(task="")
+        self._schema_block: str = ""
 
     @property
     def plan(self) -> str:
@@ -182,7 +183,9 @@ class DevWorkflow:
 
             self._agent.reset()
 
-            augmented_task = f"{task_item.description}{contract_block}"
+            # Refresh schema before each task (earlier tasks may have created SQL files)
+            self._refresh_schema_block()
+            augmented_task = f"{task_item.description}{self._schema_block}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
             task_failures = self._agent.report.failed_steps if self._agent.report else 0
@@ -249,12 +252,15 @@ class DevWorkflow:
                 contract=self._contract,
             )
 
+        # Refresh schema for resume context
+        self._refresh_schema_block()
+
         last_completed = len(self._task_results)
         for i in range(last_completed, len(self._tasks)):
             task_item = self._tasks[i]
             self._agent.reset()
 
-            augmented_task = f"{task_item.description}{contract_block}"
+            augmented_task = f"{task_item.description}{self._schema_block}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
 
@@ -292,6 +298,9 @@ class DevWorkflow:
             contract_block = self._prompts.contract_injection_template.format(
                 contract=self._contract,
             )
+
+        # Refresh schema for retry context
+        self._refresh_schema_block()
 
         completed_tasks = [
             f"  {r['index']}. {r['task']}" for r in self._task_results
@@ -344,7 +353,7 @@ class DevWorkflow:
 
             self._agent.reset()
 
-            augmented_task = f"{read_preamble}{task_item.description}{contract_block}{context}"
+            augmented_task = f"{read_preamble}{task_item.description}{self._schema_block}{contract_block}{context}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
             task_failures = self._agent.report.failed_steps if self._agent.report else 0
@@ -403,6 +412,33 @@ class DevWorkflow:
             files.append(str(rel))
         return files
 
+    def _refresh_schema_block(self) -> str:
+        """Scan working dir for SQL schema files and build the injection block."""
+        from pathlib import Path
+        base = Path(self._working_dir)
+        if not base.exists():
+            return ""
+
+        sql_files = sorted(base.glob("*.sql"))
+        if not sql_files:
+            return ""
+
+        parts = []
+        for sf in sql_files:
+            try:
+                content = sf.read_text(encoding="utf-8").strip()
+                if content and any(kw in content.upper() for kw in ("CREATE TABLE", "CREATE VIEW")):
+                    parts.append(f"### {sf.name}\n```sql\n{content}\n```")
+            except Exception:
+                continue
+
+        if not parts:
+            return ""
+
+        schema_text = "\n\n".join(parts)
+        self._schema_block = self._prompts.schema_injection_template.format(schema=schema_text)
+        return self._schema_block
+
     def _pause_and_report(self, task_index: int) -> str:
         msg = self._msgs.workflow_paused.format(
             current=task_index + 1,
@@ -455,29 +491,14 @@ class DevWorkflow:
         logger.info("Report saved to %s", path)
 
     @staticmethod
-    def _scan_written_files(report: TaskReport) -> list[str]:
-        """Extract .py file paths written during a task from the report."""
-        files = []
-        if not report:
-            return files
-        for step in report.steps:
-            if (step.action == "tool_call"
-                    and step.tool_name in ("file_write", "WriteTool")
-                    and step.tool_input
-                    and isinstance(step.tool_input, dict)):
-                path = step.tool_input.get("path", "")
-                if path.endswith(".py"):
-                    files.append(path)
-        return files
-
-    @staticmethod
     def _validate_task_output(report: TaskReport, working_dir: str) -> list[str]:
-        """Run import checks on .py files written during a task. Returns error messages."""
+        """Run import checks and SQL schema validation. Returns error messages."""
         import subprocess
         errors = []
-        files = DevWorkflow._scan_written_files(report)
+
+        # Phase 1: Python import checks on all project files
+        files = DevWorkflow._scan_all_py_files(working_dir)
         for filepath in files:
-            # Use importlib to load the file directly, avoiding __init__.py cascade
             check_code = (
                 "import importlib.util, sys; "
                 f"spec = importlib.util.spec_from_file_location('_check', '{filepath}'); "
@@ -494,6 +515,98 @@ class DevWorkflow:
                     errors.append(f"{filepath}: {result.stderr.strip()}")
             except subprocess.TimeoutExpired:
                 errors.append(f"{filepath}: import check timed out")
+
+        # Phase 2: SQL column name validation against schema
+        sql_errors = DevWorkflow._validate_sql_columns(working_dir)
+        errors.extend(sql_errors)
+
+        return errors
+
+    @staticmethod
+    def _validate_sql_columns(working_dir: str) -> list[str]:
+        """Validate SQL queries in Python files against actual schema column names."""
+        from pathlib import Path
+        import re as _re
+
+        base = Path(working_dir)
+        if not base.exists():
+            return []
+
+        # Find and parse SQL schema files
+        schema_tables: dict[str, set[str]] = {}
+        for sf in sorted(base.glob("*.sql")):
+            try:
+                content = sf.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for m in _re.finditer(
+                r'CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)\s*;',
+                content, _re.IGNORECASE | _re.DOTALL,
+            ):
+                table_name = m.group(1).lower()
+                body = m.group(2)
+                columns = set()
+                for line in body.split("\n"):
+                    line = line.strip().rstrip(",")
+                    cm = _re.match(r'^(\w+)\s+', line)
+                    if cm and cm.group(1).upper() not in (
+                        'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN', 'CONSTRAINT',
+                        'INDEX', 'KEY', 'CREATE',
+                    ):
+                        columns.add(cm.group(1).lower())
+                if columns:
+                    schema_tables[table_name] = columns
+
+        if not schema_tables:
+            return []
+
+        # Scan Python files for SQL queries and validate column references
+        errors = []
+        table_col_pattern = _re.compile(r'(\w+)\.(\w+)')
+
+        for py_file in sorted(base.glob("*.py")):
+            parts = py_file.relative_to(base).parts
+            if any(p.startswith(".") or p == "__pycache__" for p in parts):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            sql_blocks = _re.findall(r'"""(.*?)"""', content, _re.DOTALL)
+            sql_blocks += _re.findall(r"'''(.*?)'''", content, _re.DOTALL)
+
+            for sql in sql_blocks:
+                if not any(kw in sql.upper() for kw in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')):
+                    continue
+
+                alias_map: dict[str, str] = {}
+                for tm in _re.finditer(
+                    r'(?:FROM|JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?',
+                    sql, _re.IGNORECASE,
+                ):
+                    table = tm.group(1).lower()
+                    alias = (tm.group(2) or tm.group(1)).lower()
+                    if table in schema_tables:
+                        alias_map[alias] = table
+
+                if not alias_map:
+                    continue
+
+                for cm in table_col_pattern.finditer(sql):
+                    alias = cm.group(1).lower()
+                    col = cm.group(2).lower()
+                    if alias in alias_map:
+                        real_table = alias_map[alias]
+                        valid_cols = schema_tables.get(real_table, set())
+                        if valid_cols and col not in valid_cols:
+                            rel = py_file.relative_to(base)
+                            errors.append(
+                                f"{rel}: column '{alias}.{col}' not in schema "
+                                f"(table '{real_table}' has: {sorted(valid_cols)})"
+                            )
+
         return errors
 
     @staticmethod
