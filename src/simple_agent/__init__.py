@@ -3,7 +3,10 @@ from simple_agent.config import AgentConfig
 from simple_agent.dev_workflow import DevWorkflow, WorkflowConfig
 from simple_agent.messages import Messages
 from simple_agent.prompts import Prompts
-from simple_agent.scaffold import ScaffoldConfig, ScaffoldResult, run_scaffold
+from simple_agent.scaffold import (
+    ScaffoldConfig, ScaffoldResult, run_scaffold,
+    parse_data_model_columns, validate_agent_md_sections,
+)
 from simple_agent.skills import Skill, SkillRegistry, UseSkillTool, load_skill
 from simple_agent.task_report import TaskReport
 from simple_agent.tools.base import BaseTool
@@ -14,4 +17,5 @@ __all__ = [
     "SimpleAgent", "Skill", "SkillRegistry", "TaskReport", "ToolRegistry",
     "UseSkillTool", "WorkflowConfig", "load_skill",
     "ScaffoldConfig", "ScaffoldResult", "run_scaffold",
+    "parse_data_model_columns", "validate_agent_md_sections",
 ]

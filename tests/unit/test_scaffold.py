@@ -4,7 +4,7 @@ from pathlib import Path
 from simple_agent.scaffold import (
     parse_prd_sections, detect_frameworks, generate_agent_md,
     create_skeleton, run_scaffold, ScaffoldConfig,
-    parse_data_model_columns,
+    parse_data_model_columns, validate_agent_md_sections,
 )
 
 
@@ -188,3 +188,46 @@ def test_generate_agent_md_without_data_model():
     }
     content = generate_agent_md(prd_sections, [])
     assert "## Data Model" not in content
+
+
+def test_validate_agent_md_sections_all_present(tmp_path):
+    md = tmp_path / "AGENT.md"
+    md.write_text("# Rules\n## Architecture\nstuff\n## Data Model\ncols\n")
+    errors = validate_agent_md_sections(str(md), ["Architecture", "Data Model"])
+    assert errors == []
+
+
+def test_validate_agent_md_sections_missing(tmp_path):
+    md = tmp_path / "AGENT.md"
+    md.write_text("# Rules\n## Architecture\nstuff\n")
+    errors = validate_agent_md_sections(str(md), ["Architecture", "Data Model"])
+    assert len(errors) == 1
+    assert "Data Model" in errors[0]
+
+
+def test_validate_agent_md_sections_deleted_file(tmp_path):
+    errors = validate_agent_md_sections(str(tmp_path / "missing.md"), ["Architecture"])
+    assert len(errors) == 1
+    assert "deleted" in errors[0]
+
+
+def test_validate_agent_md_sections_shrunk(tmp_path):
+    md = tmp_path / "AGENT.md"
+    md.write_text("# Rules\n## Architecture\nstuff\n## Data Model\ncols\n")
+    # Simulate corruption: write very short content
+    md.write_text("# Rules\n")
+    errors = validate_agent_md_sections(str(md), ["Architecture"], original_content="x" * 100)
+    assert any("shrank" in e for e in errors)
+
+
+def test_run_scaffold_captures_original_content(tmp_path):
+    prd_path = tmp_path / "design.md"
+    prd_path.write_text(
+        "# Test\n\n## Architecture\n\n- **UI Framework**: PyQt6 ONLY\n\n## Data Model\n\n### books\n| Column | Type |\n| id | INTEGER |\n"
+    )
+    output = tmp_path / "project"
+    result = run_scaffold(ScaffoldConfig(str(prd_path), str(output)))
+    assert result.original_agent_md != ""
+    assert "Data Model" in result.original_agent_md
+    assert "Architecture" in result.required_sections
+    assert "Data Model" in result.required_sections

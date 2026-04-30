@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from simple_agent.config import AgentConfig
@@ -629,4 +630,69 @@ def test_guard_passes_when_all_ok(tmp_path):
         forbidden_frameworks=["PyQt5"],
     )
     assert errors == []
+
+
+# --- Task 4: PRD-aware schema validation tests ---
+
+
+def test_validate_sql_against_prd_match(tmp_path):
+    """Generated SQL matches PRD columns: no errors."""
+    sql = (
+        "CREATE TABLE IF NOT EXISTS books (\n"
+        "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+        "    title TEXT NOT NULL\n"
+        ");\n"
+    )
+    (tmp_path / "schema.sql").write_text(sql)
+    prd_cols = {"books": ["id", "title"]}
+    errors = DevWorkflow._validate_sql_against_prd(str(tmp_path), prd_cols)
+    assert errors == []
+
+
+def test_validate_sql_against_prd_missing_columns(tmp_path):
+    """Generated SQL uses 'key' instead of 'setting_key': error."""
+    sql = (
+        "CREATE TABLE IF NOT EXISTS settings (\n"
+        "    key TEXT PRIMARY KEY,\n"
+        "    value TEXT NOT NULL\n"
+        ");\n"
+    )
+    (tmp_path / "schema.sql").write_text(sql)
+    prd_cols = {"settings": ["id", "setting_key", "setting_value"]}
+    errors = DevWorkflow._validate_sql_against_prd(str(tmp_path), prd_cols)
+    assert len(errors) == 1
+    assert "setting_key" in errors[0]
+
+
+def test_validate_sql_against_prd_no_prd(tmp_path):
+    """Empty prd_table_columns returns no errors."""
+    sql = "CREATE TABLE t (id INTEGER);\n"
+    (tmp_path / "schema.sql").write_text(sql)
+    errors = DevWorkflow._validate_sql_against_prd(str(tmp_path), {})
+    assert errors == []
+
+
+# --- Task 5: Schema mismatch warning in _refresh_schema_block ---
+
+
+def test_refresh_schema_block_includes_mismatch_warning():
+    """When generated SQL doesn't match PRD Data Model, schema block includes warning."""
+    from simple_agent.prompts import Prompts
+
+    workflow = DevWorkflow.__new__(DevWorkflow)
+    workflow._working_dir = "/tmp/test_project"
+    workflow._schema_block = ""
+    workflow._prd_table_columns = {"settings": ["id", "setting_key", "setting_value"]}
+    workflow._prompts = Prompts()
+
+    # Create a temp dir with wrong SQL
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        workflow._working_dir = tmp
+        sql = "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\n"
+        (Path(tmp) / "schema.sql").write_text(sql)
+
+        result = workflow._refresh_schema_block()
+        assert "WARNING" in result
+        assert "setting_key" in result
 

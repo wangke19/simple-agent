@@ -60,6 +60,7 @@ class DevWorkflow:
         self._overall_report = TaskReport(task="")
         self._schema_block: str = ""
         self._scaffold_result: ScaffoldResult | None = None
+        self._prd_table_columns: dict[str, list[str]] = {}
 
     @property
     def plan(self) -> str:
@@ -111,6 +112,10 @@ class DevWorkflow:
         logger.info("=== Phase 0: Scaffold ===")
         config = ScaffoldConfig(prd_path=prd_path, output_dir=output_dir)
         self._scaffold_result = run_scaffold(config)
+        from simple_agent.scaffold import parse_prd_sections, parse_data_model_columns
+        prd_text = Path(config.prd_path).read_text(encoding="utf-8")
+        sections = parse_prd_sections(prd_text)
+        self._prd_table_columns = parse_data_model_columns(sections.get("Data Model", ""))
         logger.info(
             "Scaffold complete: frameworks=%s, rules=%d",
             self._scaffold_result.detected_frameworks,
@@ -211,6 +216,23 @@ class DevWorkflow:
         for i, task_item in enumerate(self._tasks):
             logger.info("--- Task %d/%d: %s ---", i + 1, len(self._tasks), task_item.description[:60])
 
+            # Pre-task: Validate AGENT.md completeness
+            if self._scaffold_result and self._scaffold_result.required_sections:
+                from pathlib import Path
+                from simple_agent.scaffold import validate_agent_md_sections
+                section_errors = validate_agent_md_sections(
+                    self._scaffold_result.agent_md_path,
+                    self._scaffold_result.required_sections,
+                    self._scaffold_result.original_agent_md,
+                )
+                if section_errors:
+                    for err in section_errors:
+                        logger.warning("Pre-task: %s", err)
+                    Path(self._scaffold_result.agent_md_path).write_text(
+                        self._scaffold_result.original_agent_md, encoding="utf-8"
+                    )
+                    logger.info("AGENT.md restored from scaffold snapshot")
+
             self._agent.reset()
 
             # Refresh schema before each task (earlier tasks may have created SQL files)
@@ -233,7 +255,11 @@ class DevWorkflow:
             # Validate: import check on written files
             if status not in ("paused",) and self._agent.report:
                 guard_kwargs = self._get_guard_kwargs()
-                validation_errors = self._validate_task_output(self._agent.report, self._working_dir, **guard_kwargs)
+                validation_errors = self._validate_task_output(
+                    self._agent.report, self._working_dir,
+                    **guard_kwargs,
+                    prd_table_columns=self._prd_table_columns,
+                )
                 if validation_errors:
                     for err in validation_errors:
                         logger.warning("Validation error: %s", err)
@@ -263,7 +289,6 @@ class DevWorkflow:
         return self._finalize_report()
 
     def resume(self, guidance: str, max_steps: int | None = None) -> str:
-        """Resume from a paused state with human guidance."""
         steps = max_steps or self._config.max_steps_per_task
         logger.info("=== Resuming with guidance ===")
         result = self._agent.resume(guidance, max_steps=steps)
@@ -291,6 +316,24 @@ class DevWorkflow:
         last_completed = len(self._task_results)
         for i in range(last_completed, len(self._tasks)):
             task_item = self._tasks[i]
+
+            # Pre-task: Validate AGENT.md completeness
+            if self._scaffold_result and self._scaffold_result.required_sections:
+                from pathlib import Path
+                from simple_agent.scaffold import validate_agent_md_sections
+                section_errors = validate_agent_md_sections(
+                    self._scaffold_result.agent_md_path,
+                    self._scaffold_result.required_sections,
+                    self._scaffold_result.original_agent_md,
+                )
+                if section_errors:
+                    for err in section_errors:
+                        logger.warning("Pre-task: %s", err)
+                    Path(self._scaffold_result.agent_md_path).write_text(
+                        self._scaffold_result.original_agent_md, encoding="utf-8"
+                    )
+                    logger.info("AGENT.md restored from scaffold snapshot")
+
             self._agent.reset()
 
             augmented_task = f"{task_item.description}{rules_block}{self._schema_block}{contract_block}"
@@ -386,6 +429,23 @@ class DevWorkflow:
 
             logger.info("--- Retry Task %d/%d: %s ---", idx + 1, len(self._tasks), task_item.description[:60])
 
+            # Pre-task: Validate AGENT.md completeness
+            if self._scaffold_result and self._scaffold_result.required_sections:
+                from pathlib import Path
+                from simple_agent.scaffold import validate_agent_md_sections
+                section_errors = validate_agent_md_sections(
+                    self._scaffold_result.agent_md_path,
+                    self._scaffold_result.required_sections,
+                    self._scaffold_result.original_agent_md,
+                )
+                if section_errors:
+                    for err in section_errors:
+                        logger.warning("Pre-task: %s", err)
+                    Path(self._scaffold_result.agent_md_path).write_text(
+                        self._scaffold_result.original_agent_md, encoding="utf-8"
+                    )
+                    logger.info("AGENT.md restored from scaffold snapshot")
+
             self._agent.reset()
 
             augmented_task = f"{read_preamble}{task_item.description}{rules_block}{self._schema_block}{contract_block}{context}"
@@ -404,7 +464,11 @@ class DevWorkflow:
             # Validate: import check on written files
             if status not in ("paused",) and self._agent.report:
                 guard_kwargs = self._get_guard_kwargs()
-                validation_errors = self._validate_task_output(self._agent.report, self._working_dir, **guard_kwargs)
+                validation_errors = self._validate_task_output(
+                    self._agent.report, self._working_dir,
+                    **guard_kwargs,
+                    prd_table_columns=self._prd_table_columns,
+                )
                 if validation_errors:
                     for err in validation_errors:
                         logger.warning("Validation error: %s", err)
@@ -472,6 +536,22 @@ class DevWorkflow:
             return ""
 
         schema_text = "\n\n".join(parts)
+
+        # Validate against PRD Data Model before injecting
+        if self._prd_table_columns:
+            prd_errors = self._validate_sql_against_prd(
+                self._working_dir, self._prd_table_columns,
+            )
+            if prd_errors:
+                warning_lines = [
+                    "",
+                    "**WARNING: Generated SQL does NOT match PRD Data Model!**",
+                    "The Data Model columns in AGENT.md are CORRECT. Fix the SQL. Mismatches:",
+                ]
+                for err in prd_errors:
+                    warning_lines.append(f"  - {err}")
+                schema_text += "\n".join(warning_lines)
+
         self._schema_block = self._prompts.schema_injection_template.format(schema=schema_text)
         return self._schema_block
 
@@ -578,6 +658,48 @@ class DevWorkflow:
         logger.info("Report saved to %s", path)
 
     @staticmethod
+    def _validate_sql_against_prd(
+        working_dir: str,
+        prd_table_columns: dict[str, list[str]],
+    ) -> list[str]:
+        """Validate generated SQL columns match PRD Data Model. Returns error list."""
+        if not prd_table_columns:
+            return []
+        from pathlib import Path
+        import re as _re
+        base = Path(working_dir)
+        if not base.exists():
+            return []
+        errors = []
+        for sf in sorted(base.glob("*.sql")):
+            try:
+                content = sf.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for m in _re.finditer(
+                r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\)\s*;',
+                content, _re.IGNORECASE | _re.DOTALL,
+            ):
+                table_name = m.group(1).lower()
+                if table_name not in prd_table_columns:
+                    continue
+                actual_cols = set()
+                for line in m.group(2).split("\n"):
+                    line = line.strip().rstrip(",")
+                    cm = _re.match(r'^(\w+)\s+', line)
+                    if cm and cm.group(1).upper() not in (
+                        'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN', 'CONSTRAINT',
+                    ):
+                        actual_cols.add(cm.group(1).lower())
+                expected = set(prd_table_columns[table_name])
+                missing = expected - actual_cols
+                if missing:
+                    errors.append(
+                        f"SCHEMA MISMATCH: Table '{table_name}' missing PRD columns: {sorted(missing)}"
+                    )
+        return errors
+
+    @staticmethod
     def _validate_guard_checks(
         working_dir: str,
         agent_md_path: str = "",
@@ -637,6 +759,7 @@ class DevWorkflow:
         agent_md_path: str = "",
         allowed_frameworks: list[str] | None = None,
         forbidden_frameworks: list[str] | None = None,
+        prd_table_columns: dict[str, list[str]] | None = None,
     ) -> list[str]:
         """Run import checks and SQL schema validation. Returns error messages."""
         import subprocess
@@ -674,6 +797,11 @@ class DevWorkflow:
             forbidden_frameworks=forbidden_frameworks,
         )
         errors.extend(guard_errors)
+
+        # Phase 4: Schema validation against PRD Data Model
+        if prd_table_columns:
+            prd_errors = DevWorkflow._validate_sql_against_prd(working_dir, prd_table_columns)
+            errors.extend(prd_errors)
 
         return errors
 

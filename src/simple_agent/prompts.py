@@ -95,6 +95,7 @@ class Prompts:
         "## Database Schema (GROUND TRUTH — all SQL must use these EXACT table and column names)\n"
         "When writing SQL queries, you MUST use the column names defined below. Do NOT invent column names.\n"
         "Pay special attention to: primary key column names, foreign key column names, and column naming conventions.\n"
+        "If a Data Model section exists in the project rules, those column names take priority over any SQL file content.\n"
         "{schema}\n"
         "---"
     )
@@ -200,6 +201,7 @@ def chinese_prompts() -> Prompts:
             "## 数据库 Schema（以下是最终权威定义 — 所有 SQL 必须使用这里的精确表名和列名）\n"
             "编写 SQL 查询时，必须使用下面定义的列名，不得自行发明列名。\n"
             "特别注意：主键列名、外键列名、列命名风格。\n"
+            "如果项目规则中存在 Data Model 节，那里的列名优先于任何 SQL 文件内容。\n"
             "{schema}\n"
             "---"
         ),

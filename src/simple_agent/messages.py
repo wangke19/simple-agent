@@ -40,6 +40,12 @@ class Messages:
     guard_missing_directory: str = (
         "GUARD: Required directory missing: {directory}"
     )
+    guard_agent_md_section_missing: str = (
+        "GUARD: AGENT.md section '{section}' was deleted or corrupted"
+    )
+    guard_schema_mismatch: str = (
+        "SCHEMA MISMATCH: Table '{table}' columns differ from PRD Data Model"
+    )
 
 
 def chinese_messages() -> Messages:
@@ -70,4 +76,10 @@ def chinese_messages() -> Messages:
             "（允许: {allowed}）"
         ),
         guard_missing_directory="守卫: 缺少必需目录: {directory}",
+        guard_agent_md_section_missing=(
+            "GUARD: AGENT.md 节 '{section}' 被删除或损坏"
+        ),
+        guard_schema_mismatch=(
+            "SCHEMA MISMATCH: 表 '{table}' 列名与 PRD Data Model 不匹配"
+        ),
     )

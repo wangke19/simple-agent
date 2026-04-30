@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -31,6 +31,8 @@ class ScaffoldResult:
     agent_md_path: str
     detected_frameworks: list[str]
     rules_count: int
+    original_agent_md: str = ""
+    required_sections: list[str] = field(default_factory=list)
 
 
 def parse_prd_sections(prd_text: str) -> dict[str, str]:
@@ -90,6 +92,29 @@ def parse_data_model_columns(data_model_text: str) -> dict[str, list[str]]:
             tables[table_name] = columns
 
     return tables
+
+
+def validate_agent_md_sections(
+    agent_md_path: str,
+    required_sections: list[str],
+    original_content: str = "",
+) -> list[str]:
+    """Validate AGENT.md has all required sections. Returns error list."""
+    md = Path(agent_md_path)
+    if not md.exists():
+        return ["GUARD: AGENT.md was deleted during execution"]
+    current = md.read_text(encoding="utf-8")
+    if not current.strip():
+        return ["GUARD: AGENT.md was emptied during execution"]
+    errors = []
+    for section in required_sections:
+        if f"## {section}" not in current:
+            errors.append(f"GUARD: AGENT.md section '{section}' was deleted or corrupted")
+    if original_content and len(current) < len(original_content) * 0.5:
+        errors.append(
+            f"GUARD: AGENT.md shrank from {len(original_content)} to {len(current)} chars"
+        )
+    return errors
 
 
 def _load_framework_rules(framework: str) -> str:
@@ -212,9 +237,16 @@ def run_scaffold(config: ScaffoldConfig) -> ScaffoldResult:
         if line.strip() and not line.startswith("#") and not line.startswith("---")
     )
 
+    required_sections = [
+        s for s in ("Architecture", "Conventions", "Data Model", "UI Framework Rules")
+        if s in sections or (s == "Data Model" and has_database)
+    ]
+
     return ScaffoldResult(
         output_dir=config.output_dir,
         agent_md_path=str(agent_md_path),
         detected_frameworks=frameworks,
         rules_count=rules_count,
+        original_agent_md=agent_md_content,
+        required_sections=required_sections,
     )
