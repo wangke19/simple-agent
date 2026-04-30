@@ -97,12 +97,12 @@ def test_generate_agent_md_includes_conventions(tmp_path):
 def test_create_skeleton_creates_directories(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=["pyqt6"], has_database=True)
-    assert (output / "src").is_dir()
     assert (output / "tests").is_dir()
     assert (output / "main.py").exists()
     assert (output / "requirements.txt").exists()
     assert (output / "database_init.sql").exists()
     assert (output / ".gitignore").exists()
+    assert not (output / "src").exists()
 
 
 def test_create_skeleton_no_database(tmp_path):

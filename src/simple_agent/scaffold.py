@@ -81,6 +81,13 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
     lines.append("# Project Rules\n")
 
+    # Directory structure — always present, prevents LLM from inventing subdirs
+    lines.append("## Directory Structure")
+    lines.append("All .py source files are placed in the project root directory.")
+    lines.append("Do NOT create subdirectories like `src/`, `services/`, `ui/`, `views/`, etc.")
+    lines.append("Tests go in `tests/`. Database schema goes in `database_init.sql` at root.")
+    lines.append("")
+
     arch = prd_sections.get("Architecture", "")
     if arch:
         lines.append("## Architecture Constraints")
@@ -123,7 +130,6 @@ def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) 
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
 
-    (base / "src").mkdir(exist_ok=True)
     (base / "tests").mkdir(exist_ok=True)
 
     (base / "main.py").write_text("", encoding="utf-8")
