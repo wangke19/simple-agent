@@ -532,3 +532,35 @@ def test_execute_marks_failed_on_import_error(mock_agent, tmp_path):
     wf.execute(max_steps_per_task=2)
 
     assert wf._task_results[0]["status"] == "failed"
+
+
+def test_scaffold_adds_rules_block_to_tasks(mock_agent, tmp_path):
+    """When scaffold is run, rules_block is injected into task prompts."""
+    from simple_agent.scaffold import ScaffoldConfig, run_scaffold
+
+    prd_path = tmp_path / "design.md"
+    prd_path.write_text(
+        "# Test\n\n## Architecture\n\n- **UI Framework**: PyQt6 ONLY\n\n"
+        "## Data Model\n\n### books\n| id | INTEGER |\n\n"
+        "## Conventions\n\n- PyQt6 ONLY\n"
+    )
+    output_dir = tmp_path / "project"
+
+    mock_agent._llm.call.side_effect = [
+        MagicMock(content=[MagicMock(type="text", text="1. Create main.py\n2. Create ui.py")]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+        MagicMock(content=[MagicMock(type="text", text="done")]),
+    ]
+
+    scaffold_result = run_scaffold(ScaffoldConfig(str(prd_path), str(output_dir)))
+
+    wf = DevWorkflow(mock_agent, report_dir="/tmp/test_reports", working_dir=str(output_dir))
+    wf._scaffold_result = scaffold_result
+    wf.plan_task("build a PyQt6 app")
+    wf.execute(max_steps_per_task=1)
+
+    calls = mock_agent._llm.call.call_args_list
+    task1_kwargs = calls[1].kwargs
+    messages = task1_kwargs.get("messages")
+    user_msgs = [m for m in messages if m["role"] == "user"]
+    assert any("Project Rules" in m.get("content", "") for m in user_msgs)

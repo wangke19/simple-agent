@@ -10,6 +10,7 @@ from typing import Any
 from simple_agent.agent import SimpleAgent
 from simple_agent.messages import Messages
 from simple_agent.prompts import Prompts
+from simple_agent.scaffold import ScaffoldConfig, ScaffoldResult, run_scaffold
 from simple_agent.task_report import StepStatus, TaskReport
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class DevWorkflow:
         self._task_results: list[dict[str, Any]] = []
         self._overall_report = TaskReport(task="")
         self._schema_block: str = ""
+        self._scaffold_result: ScaffoldResult | None = None
 
     @property
     def plan(self) -> str:
@@ -89,6 +91,32 @@ class DevWorkflow:
         if self._config.enable_contracts:
             self.define_contracts(requirement)
         return self.execute(max_steps_per_task=self._config.max_steps_per_task)
+
+    def scaffold(self, prd_path: str, output_dir: str, skip: bool = False) -> ScaffoldResult:
+        """Phase 0: Create project skeleton and AGENT.md."""
+        from pathlib import Path
+
+        if skip:
+            logger.info("=== Phase 0: Scaffold (skipped) ===")
+            agent_md = Path(output_dir) / "AGENT.md"
+            if agent_md.exists():
+                self._scaffold_result = ScaffoldResult(
+                    output_dir=output_dir,
+                    agent_md_path=str(agent_md),
+                    detected_frameworks=[],
+                    rules_count=0,
+                )
+            return self._scaffold_result or ScaffoldResult(output_dir, "", [], 0)
+
+        logger.info("=== Phase 0: Scaffold ===")
+        config = ScaffoldConfig(prd_path=prd_path, output_dir=output_dir)
+        self._scaffold_result = run_scaffold(config)
+        logger.info(
+            "Scaffold complete: frameworks=%s, rules=%d",
+            self._scaffold_result.detected_frameworks,
+            self._scaffold_result.rules_count,
+        )
+        return self._scaffold_result
 
     def plan_task(self, requirement: str) -> str:
         """Phase 1: Generate a development plan."""
@@ -178,6 +206,8 @@ class DevWorkflow:
                 contract=self._contract,
             )
 
+        rules_block = self._build_rules_block()
+
         for i, task_item in enumerate(self._tasks):
             logger.info("--- Task %d/%d: %s ---", i + 1, len(self._tasks), task_item.description[:60])
 
@@ -185,7 +215,7 @@ class DevWorkflow:
 
             # Refresh schema before each task (earlier tasks may have created SQL files)
             self._refresh_schema_block()
-            augmented_task = f"{task_item.description}{self._schema_block}{contract_block}"
+            augmented_task = f"{task_item.description}{rules_block}{self._schema_block}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
             task_failures = self._agent.report.failed_steps if self._agent.report else 0
@@ -252,6 +282,8 @@ class DevWorkflow:
                 contract=self._contract,
             )
 
+        rules_block = self._build_rules_block()
+
         # Refresh schema for resume context
         self._refresh_schema_block()
 
@@ -260,7 +292,7 @@ class DevWorkflow:
             task_item = self._tasks[i]
             self._agent.reset()
 
-            augmented_task = f"{task_item.description}{self._schema_block}{contract_block}"
+            augmented_task = f"{task_item.description}{rules_block}{self._schema_block}{contract_block}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
 
@@ -301,6 +333,8 @@ class DevWorkflow:
 
         # Refresh schema for retry context
         self._refresh_schema_block()
+
+        rules_block = self._build_rules_block()
 
         completed_tasks = [
             f"  {r['index']}. {r['task']}" for r in self._task_results
@@ -353,7 +387,7 @@ class DevWorkflow:
 
             self._agent.reset()
 
-            augmented_task = f"{read_preamble}{task_item.description}{self._schema_block}{contract_block}{context}"
+            augmented_task = f"{read_preamble}{task_item.description}{rules_block}{self._schema_block}{contract_block}{context}"
             task_report = self._agent.run(augmented_task, max_steps=steps)
             status = self._agent.report.status if self._agent.report else "unknown"
             task_failures = self._agent.report.failed_steps if self._agent.report else 0
@@ -439,6 +473,29 @@ class DevWorkflow:
         self._schema_block = self._prompts.schema_injection_template.format(schema=schema_text)
         return self._schema_block
 
+    def _build_rules_block(self) -> str:
+        """Build the rules injection block from project AGENT.md and engineering standards."""
+        from pathlib import Path
+        from simple_agent.scaffold import _load_engineering_standards
+
+        if not self._scaffold_result:
+            return ""
+
+        agent_md_path = Path(self._scaffold_result.agent_md_path)
+        if not agent_md_path.exists():
+            return ""
+
+        project_rules = agent_md_path.read_text(encoding="utf-8")
+        if not project_rules.strip():
+            return ""
+
+        engineering = _load_engineering_standards()
+
+        return self._prompts.rules_injection_template.format(
+            rules=project_rules,
+            engineering_standards=engineering,
+        )
+
     def _pause_and_report(self, task_index: int) -> str:
         msg = self._msgs.workflow_paused.format(
             current=task_index + 1,
@@ -489,6 +546,13 @@ class DevWorkflow:
         path = Path(self._report_dir) / filename
         self._overall_report.save(path)
         logger.info("Report saved to %s", path)
+
+    @staticmethod
+    def _scan_all_py_files(working_dir: str) -> list[str]:
+        """Recursively find all .py files in working_dir."""
+        import pathlib
+        base = pathlib.Path(working_dir)
+        return sorted(str(p) for p in base.rglob("*.py"))
 
     @staticmethod
     def _validate_task_output(report: TaskReport, working_dir: str) -> list[str]:
