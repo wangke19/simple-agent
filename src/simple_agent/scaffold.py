@@ -139,48 +139,58 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
     lines.append("# Project Rules\n")
 
-    # Directory structure — standard layered architecture
+    # Directory structure — standard src-layout architecture
     lines.append("## Directory Structure")
-    lines.append("Projects follow a layered architecture with clear separation of concerns.")
-    lines.append("Files MUST go in their designated directory — do NOT put everything in root.")
+    lines.append("Projects use standard Python src-layout with clear separation of concerns.")
+    lines.append("ALL source code goes in `src/`. Do NOT create .py files in project root.")
     lines.append("")
     lines.append("```")
     lines.append("project/")
-    lines.append("├── main.py              # Entry point ONLY — imports and launches app")
-    lines.append("├── models.py            # Data models / dataclasses")
-    lines.append("├── database_init.sql    # Single source of truth for DB schema")
-    lines.append("├── requirements.txt     # Dependencies")
-    lines.append("├── services/            # Business logic layer")
+    lines.append("├── src/                     # ALL source code lives here")
     lines.append("│   ├── __init__.py")
-    lines.append("│   ├── db_manager.py    # Database connection and query helpers")
-    lines.append("│   └── *_service.py     # One service per domain entity")
-    lines.append("├── ui/                  # Presentation layer (views, dialogs)")
-    lines.append("│   ├── __init__.py")
-    lines.append("│   ├── main_window.py   # Main window — assembles all views")
-    lines.append("│   ├── *_tab.py         # Tab / page views")
-    lines.append("│   └── *_dialog.py      # Modal dialogs for forms")
+    lines.append("│   ├── main.py              # Entry point — imports and launches app")
+    lines.append("│   ├── models.py            # Data models / dataclasses")
+    lines.append("│   ├── database/")
+    lines.append("│   │   ├── __init__.py")
+    lines.append("│   │   ├── db_manager.py    # Database connection and query helpers")
+    lines.append("│   │   └── schema.sql       # Single source of truth for DB schema")
+    lines.append("│   ├── services/")
+    lines.append("│   │   ├── __init__.py")
+    lines.append("│   │   └── *_service.py     # One service per domain entity")
+    lines.append("│   └── ui/")
+    lines.append("│       ├── __init__.py")
+    lines.append("│       ├── main_window.py   # Main window — assembles all views")
+    lines.append("│       ├── *_tab.py         # Tab / page views")
+    lines.append("│       └── *_dialog.py      # Modal dialogs for forms")
     lines.append("├── config/")
-    lines.append("│   └── styles.qss       # Stylesheet")
+    lines.append("│   └── styles.qss           # Stylesheet")
     lines.append("├── tests/")
-    lines.append("│   └── smoke_test.py    # Smoke tests")
-    lines.append("├── .reports/            # Workflow reports (gitignored)")
-    lines.append("└── AGENT.md             # This file")
+    lines.append("│   └── smoke_test.py")
+    lines.append("├── data/                    # Runtime data (gitignored)")
+    lines.append("├── .reports/                # Workflow reports (gitignored)")
+    lines.append("├── requirements.txt")
+    lines.append("├── AGENT.md")
+    lines.append("└── .gitignore")
     lines.append("```")
     lines.append("")
     lines.append("### Import Rules")
-    lines.append("- From `main.py`: `from ui.main_window import MainWindow`")
-    lines.append("- From `ui/*_tab.py`: `from services.book_service import BookService`")
-    lines.append("- From `services/*_service.py`: `from models import Book`")
-    lines.append("- Do NOT use relative imports — use package imports as shown above")
+    lines.append("All imports use `src.` prefix:")
+    lines.append("- `from src.ui.main_window import MainWindow`")
+    lines.append("- `from src.services.book_service import BookService`")
+    lines.append("- `from src.models import Book`")
+    lines.append("- `from src.database.db_manager import DatabaseManager`")
+    lines.append("- `from src.database.schema import SCHEMA_PATH` (if needed)")
+    lines.append("- Do NOT use relative imports or sys.path hacks")
     lines.append("")
     lines.append("### File Placement Rules")
-    lines.append("- `*_service.py` → MUST go in `services/`")
-    lines.append("- `*_tab.py`, `*_dialog.py`, `main_window.py` → MUST go in `ui/`")
-    lines.append("- `db_manager.py` → MUST go in `services/`")
-    lines.append("- `models.py` → stays in project root (shared by all layers)")
-    lines.append("- `styles.qss` → MUST go in `config/`")
-    lines.append("- Smoke tests → MUST go in `tests/`")
-    lines.append("- Do NOT create files outside these directories")
+    lines.append("- `main.py`, `models.py` → `src/`")
+    lines.append("- `db_manager.py`, `schema.sql` → `src/database/`")
+    lines.append("- `*_service.py` → `src/services/`")
+    lines.append("- `*_tab.py`, `*_dialog.py`, `main_window.py` → `src/ui/`")
+    lines.append("- `styles.qss` → `config/`")
+    lines.append("- Smoke tests → `tests/`")
+    lines.append("- Runtime databases (`*.db`) → `data/` (gitignored)")
+    lines.append("- Do NOT create .py files in the project root")
     lines.append("")
 
     arch = prd_sections.get("Architecture", "")
@@ -227,19 +237,32 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
 
 def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) -> None:
-    """Create project directory skeleton with standard layered structure."""
+    """Create project directory skeleton with standard src-layout structure."""
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
 
-    # Standard layered directories
-    for subdir in ("services", "ui", "config", "tests"):
+    src = base / "src"
+    src.mkdir(exist_ok=True)
+
+    # Source code packages
+    for subdir in ("database", "services", "ui"):
+        (src / subdir).mkdir(exist_ok=True)
+
+    # __init__.py for all Python packages
+    (src / "__init__.py").write_text("", encoding="utf-8")
+    for pkg in ("database", "services", "ui"):
+        (src / pkg / "__init__.py").write_text("", encoding="utf-8")
+
+    # Entry point
+    (src / "main.py").write_text("", encoding="utf-8")
+
+    # Data model stays at src/ level (shared by all layers)
+    if has_database:
+        (src / "database" / "schema.sql").write_text("", encoding="utf-8")
+
+    # Non-code directories at project root
+    for subdir in ("config", "tests", "data"):
         (base / subdir).mkdir(exist_ok=True)
-
-    # __init__.py for Python packages
-    for pkg in ("services", "ui"):
-        (base / pkg / "__init__.py").write_text("", encoding="utf-8")
-
-    (base / "main.py").write_text("", encoding="utf-8")
 
     deps: list[str] = []
     if "pyqt6" in frameworks:
@@ -250,11 +273,8 @@ def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) 
         deps.extend(["fastapi>=0.100", "uvicorn>=0.20"])
     (base / "requirements.txt").write_text("\n".join(deps) + "\n", encoding="utf-8")
 
-    if has_database:
-        (base / "database_init.sql").write_text("", encoding="utf-8")
-
     (base / ".gitignore").write_text(
-        "__pycache__/\n*.pyc\n*.pyo\n.env\n*.db\n.reports/\n"
+        "__pycache__/\n*.pyc\n*.pyo\n.env\ndata/\n*.db\n.reports/\n"
         "test_*.db\n*.log\nSMOKE_TEST_RESULTS.md\n",
         encoding="utf-8",
     )

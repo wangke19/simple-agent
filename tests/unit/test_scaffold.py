@@ -98,15 +98,20 @@ def test_generate_agent_md_includes_conventions(tmp_path):
 def test_create_skeleton_creates_directories(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=["pyqt6"], has_database=True)
-    assert (output / "tests").is_dir()
-    assert (output / "services").is_dir()
-    assert (output / "ui").is_dir()
+    # src-layout: all source code in src/
+    assert (output / "src").is_dir()
+    assert (output / "src" / "__init__.py").exists()
+    assert (output / "src" / "main.py").exists()
+    assert (output / "src" / "database").is_dir()
+    assert (output / "src" / "database" / "__init__.py").exists()
+    assert (output / "src" / "database" / "schema.sql").exists()
+    assert (output / "src" / "services" / "__init__.py").exists()
+    assert (output / "src" / "ui" / "__init__.py").exists()
+    # Non-code dirs at root
     assert (output / "config").is_dir()
-    assert (output / "services" / "__init__.py").exists()
-    assert (output / "ui" / "__init__.py").exists()
-    assert (output / "main.py").exists()
+    assert (output / "tests").is_dir()
+    assert (output / "data").is_dir()
     assert (output / "requirements.txt").exists()
-    assert (output / "database_init.sql").exists()
     assert (output / ".gitignore").exists()
 
 
@@ -114,6 +119,7 @@ def test_gitignore_covers_runtime_artifacts(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=[], has_database=True)
     gitignore = (output / ".gitignore").read_text()
+    assert "data/" in gitignore
     assert "*.db" in gitignore
     assert ".reports/" in gitignore
     assert "test_*.db" in gitignore
@@ -125,17 +131,17 @@ def test_generate_agent_md_has_file_organization_table(tmp_path):
         "Architecture": "- **Database**: SQLite",
     }
     content = generate_agent_md(prd_sections, [])
+    assert "src/" in content
     assert "services/" in content
     assert "ui/" in content
-    assert "tests/" in content
-    assert "*_service.py" in content
-    assert "*_tab.py" in content
+    assert "database/" in content
+    assert "data/" in content
 
 
 def test_create_skeleton_no_database(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=[], has_database=False)
-    assert not (output / "database_init.sql").exists()
+    assert not (output / "src" / "database" / "schema.sql").exists()
 
 
 def test_run_scaffold_full(tmp_path):
