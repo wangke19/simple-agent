@@ -232,7 +232,8 @@ class DevWorkflow:
 
             # Validate: import check on written files
             if status not in ("paused",) and self._agent.report:
-                validation_errors = self._validate_task_output(self._agent.report, self._working_dir)
+                guard_kwargs = self._get_guard_kwargs()
+                validation_errors = self._validate_task_output(self._agent.report, self._working_dir, **guard_kwargs)
                 if validation_errors:
                     for err in validation_errors:
                         logger.warning("Validation error: %s", err)
@@ -402,7 +403,8 @@ class DevWorkflow:
 
             # Validate: import check on written files
             if status not in ("paused",) and self._agent.report:
-                validation_errors = self._validate_task_output(self._agent.report, self._working_dir)
+                guard_kwargs = self._get_guard_kwargs()
+                validation_errors = self._validate_task_output(self._agent.report, self._working_dir, **guard_kwargs)
                 if validation_errors:
                     for err in validation_errors:
                         logger.warning("Validation error: %s", err)
@@ -496,6 +498,26 @@ class DevWorkflow:
             engineering_standards=engineering,
         )
 
+    def _get_guard_kwargs(self) -> dict:
+        """Extract guard check parameters from scaffold result."""
+        if not self._scaffold_result:
+            return {}
+        frameworks = self._scaffold_result.detected_frameworks
+        allowed = [fw.upper() for fw in frameworks] if frameworks else []
+        forbidden_map = {
+            "pyqt6": ["PyQt5", "PySide2", "PySide6"],
+            "flask": [],
+            "fastapi": [],
+        }
+        forbidden = []
+        for fw in frameworks:
+            forbidden.extend(forbidden_map.get(fw, []))
+        return {
+            "agent_md_path": self._scaffold_result.agent_md_path,
+            "allowed_frameworks": allowed,
+            "forbidden_frameworks": forbidden,
+        }
+
     def _pause_and_report(self, task_index: int) -> str:
         msg = self._msgs.workflow_paused.format(
             current=task_index + 1,
@@ -534,6 +556,14 @@ class DevWorkflow:
             lines.append("## API Contract")
             lines.append(self._contract)
 
+        if self._scaffold_result:
+            lines.append("")
+            lines.append("## Scaffold & Rules")
+            frameworks = ", ".join(self._scaffold_result.detected_frameworks) or "none detected"
+            lines.append(f"- Framework detected: {frameworks}")
+            lines.append(f"- Rules file: AGENT.md ({self._scaffold_result.rules_count} rules)")
+            lines.append(f"- Guard checks: active ({len(self._scaffold_result.detected_frameworks)} forbidden import patterns)")
+
         self._overall_report.final_result += "\n\n" + "\n".join(lines)
 
         self._save_report()
@@ -548,6 +578,53 @@ class DevWorkflow:
         logger.info("Report saved to %s", path)
 
     @staticmethod
+    def _validate_guard_checks(
+        working_dir: str,
+        agent_md_path: str = "",
+        allowed_frameworks: list[str] | None = None,
+        forbidden_frameworks: list[str] | None = None,
+    ) -> list[str]:
+        """Validate structural integrity and framework rules. Returns error messages."""
+        import re as _re
+        from pathlib import Path
+
+        errors: list[str] = []
+        base = Path(working_dir)
+
+        # Check 1: AGENT.md integrity
+        if agent_md_path:
+            md = Path(agent_md_path)
+            if not md.exists():
+                errors.append("GUARD: AGENT.md was deleted during execution — this is not allowed")
+            elif md.stat().st_size == 0:
+                errors.append("GUARD: AGENT.md was emptied during execution — this is not allowed")
+
+        # Check 2: Forbidden import detection
+        if forbidden_frameworks:
+            for py_file in sorted(base.rglob("*.py")):
+                parts = py_file.relative_to(base).parts
+                if any(p.startswith(".") or p == "__pycache__" or p == "site-packages" for p in parts):
+                    continue
+                try:
+                    content = py_file.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                for fw in forbidden_frameworks:
+                    pattern = rf'(?:^import\s+{fw}|^from\s+{fw})'
+                    if _re.search(pattern, content, _re.MULTILINE):
+                        rel = py_file.relative_to(base)
+                        errors.append(
+                            f"GUARD: Forbidden import '{fw}' in {rel} "
+                            f"(allowed: {', '.join(allowed_frameworks or [])})"
+                        )
+
+        # Check 3: Required directories
+        if not (base / "tests").is_dir():
+            errors.append("GUARD: Required directory 'tests/' is missing")
+
+        return errors
+
+    @staticmethod
     def _scan_all_py_files(working_dir: str) -> list[str]:
         """Recursively find all .py files in working_dir."""
         import pathlib
@@ -555,7 +632,12 @@ class DevWorkflow:
         return sorted(str(p) for p in base.rglob("*.py"))
 
     @staticmethod
-    def _validate_task_output(report: TaskReport, working_dir: str) -> list[str]:
+    def _validate_task_output(
+        report: TaskReport, working_dir: str,
+        agent_md_path: str = "",
+        allowed_frameworks: list[str] | None = None,
+        forbidden_frameworks: list[str] | None = None,
+    ) -> list[str]:
         """Run import checks and SQL schema validation. Returns error messages."""
         import subprocess
         errors = []
@@ -583,6 +665,15 @@ class DevWorkflow:
         # Phase 2: SQL column name validation against schema
         sql_errors = DevWorkflow._validate_sql_columns(working_dir)
         errors.extend(sql_errors)
+
+        # Phase 3: Guard checks
+        guard_errors = DevWorkflow._validate_guard_checks(
+            working_dir,
+            agent_md_path=agent_md_path,
+            allowed_frameworks=allowed_frameworks,
+            forbidden_frameworks=forbidden_frameworks,
+        )
+        errors.extend(guard_errors)
 
         return errors
 
