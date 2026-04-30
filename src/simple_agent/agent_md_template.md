@@ -8,6 +8,25 @@ Every generated project MUST have:
 - tests/ directory (even if minimal)
 - .gitignore
 
+## File Organization
+Source code, test code, build artifacts, and runtime data MUST be separated:
+
+| Category | Location | Examples |
+|----------|----------|----------|
+| Source code | Project root `*.py` | `main.py`, `db_manager.py`, `*_service.py`, `*_tab.py` |
+| Tests | `tests/` | `tests/smoke_test.py`, `tests/test_*.py` |
+| Database schema | Root `database_init.sql` | Single source of truth for all SQL |
+| Styles | Root `styles.qss` | Qt stylesheet |
+| Build artifacts | `.reports/` | Workflow reports, smoke test results |
+| Runtime data | Root (gitignored) | `*.db`, `test_*.db` |
+
+Rules:
+- Smoke tests go in `tests/`, NOT in the project root
+- Test result reports go in `.reports/`, NOT alongside source files
+- Runtime databases (`*.db`) must be in `.gitignore`
+- Do NOT create ad-hoc result files in the project root (e.g. `SMOKE_TEST_RESULTS.md`, `test_import.db`)
+- Do NOT create subdirectories like `src/`, `services/`, `ui/`, `views/`
+
 ## Quality Gates
 - All Python files must pass import check (no syntax or import errors)
 - Database projects: schema file is single source of truth for all SQL

@@ -106,6 +106,26 @@ def test_create_skeleton_creates_directories(tmp_path):
     assert not (output / "src").exists()
 
 
+def test_gitignore_covers_runtime_artifacts(tmp_path):
+    output = tmp_path / "project"
+    create_skeleton(str(output), frameworks=[], has_database=True)
+    gitignore = (output / ".gitignore").read_text()
+    assert "*.db" in gitignore
+    assert ".reports/" in gitignore
+    assert "test_*.db" in gitignore
+    assert "SMOKE_TEST_RESULTS.md" in gitignore
+
+
+def test_generate_agent_md_has_file_organization_table(tmp_path):
+    prd_sections = {
+        "Architecture": "- **Database**: SQLite",
+    }
+    content = generate_agent_md(prd_sections, [])
+    assert "tests/" in content
+    assert ".reports/" in content
+    assert "SMOKE_TEST_RESULTS.md" not in content or "WRONG" in content
+
+
 def test_create_skeleton_no_database(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=[], has_database=False)

@@ -141,9 +141,21 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
     # Directory structure — always present, prevents LLM from inventing subdirs
     lines.append("## Directory Structure")
-    lines.append("All .py source files are placed in the project root directory.")
+    lines.append("Source files (`.py`) are placed in the project root directory.")
     lines.append("Do NOT create subdirectories like `src/`, `services/`, `ui/`, `views/`, etc.")
-    lines.append("Tests go in `tests/`. Database schema goes in `database_init.sql` at root.")
+    lines.append("")
+    lines.append("| What | Where |")
+    lines.append("|------|-------|")
+    lines.append("| Source code (`*.py`) | Project root |")
+    lines.append("| Database schema | `database_init.sql` at root |")
+    lines.append("| Stylesheet | `styles.qss` at root |")
+    lines.append("| Tests | `tests/` directory (smoke tests go in `tests/smoke_test.py`) |")
+    lines.append("| Workflow reports | `.reports/` (gitignored, auto-generated) |")
+    lines.append("| Runtime data (`*.db`) | Root (gitignored, NOT committed) |")
+    lines.append("")
+    lines.append("Do NOT create ad-hoc files in the project root:")
+    lines.append("- WRONG: `SMOKE_TEST_RESULTS.md`, `test_import.db`, `smoke_test.py` in root")
+    lines.append("- RIGHT: `tests/smoke_test.py`, `.reports/` for results, gitignore `*.db`")
     lines.append("")
 
     arch = prd_sections.get("Architecture", "")
@@ -211,7 +223,8 @@ def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) 
         (base / "database_init.sql").write_text("", encoding="utf-8")
 
     (base / ".gitignore").write_text(
-        "__pycache__/\n*.pyc\n*.pyo\n.env\n*.db\n.reports/\n",
+        "__pycache__/\n*.pyc\n*.pyo\n.env\n*.db\n.reports/\n"
+        "test_*.db\n*.log\nSMOKE_TEST_RESULTS.md\n",
         encoding="utf-8",
     )
 
