@@ -59,6 +59,39 @@ def detect_frameworks(text: str) -> list[str]:
     return detected
 
 
+def parse_data_model_columns(data_model_text: str) -> dict[str, list[str]]:
+    """Parse Data Model section into {table_name: [column_names]}."""
+    tables: dict[str, list[str]] = {}
+    if not data_model_text:
+        return tables
+
+    table_pattern = re.compile(r'^###\s+(\w+)\s*$', re.MULTILINE)
+    matches = list(table_pattern.finditer(data_model_text))
+
+    for i, match in enumerate(matches):
+        table_name = match.group(1).lower()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(data_model_text)
+        section = data_model_text[start:end]
+
+        columns = []
+        for line in section.split("\n"):
+            line = line.strip()
+            if line.startswith("|--") or line.startswith("| Column") or line.startswith("| column"):
+                continue
+            if line.startswith("|") and not line.startswith("|>"):
+                cells = [c.strip() for c in line.split("|")]
+                if len(cells) >= 2:
+                    col_name = cells[1].strip()
+                    if col_name and re.match(r'^[a-z_]\w*$', col_name, re.IGNORECASE):
+                        columns.append(col_name.lower())
+
+        if columns:
+            tables[table_name] = columns
+
+    return tables
+
+
 def _load_framework_rules(framework: str) -> str:
     """Load framework-specific rules from knowledge base."""
     rules_file = _RULES_DIR / f"{framework}.md"
@@ -98,6 +131,12 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
     if conventions:
         lines.append("## Conventions")
         lines.append(conventions)
+        lines.append("")
+
+    data_model = prd_sections.get("Data Model", "")
+    if data_model:
+        lines.append("## Data Model")
+        lines.append(data_model)
         lines.append("")
 
     ui_rules = prd_sections.get("UI Framework Rules", "")

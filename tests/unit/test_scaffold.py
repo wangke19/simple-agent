@@ -4,6 +4,7 @@ from pathlib import Path
 from simple_agent.scaffold import (
     parse_prd_sections, detect_frameworks, generate_agent_md,
     create_skeleton, run_scaffold, ScaffoldConfig,
+    parse_data_model_columns,
 )
 
 
@@ -130,3 +131,60 @@ def test_run_scaffold_full(tmp_path):
     agent_md = (output / "AGENT.md").read_text()
     assert "PyQt6" in agent_md
     assert "scoped" in agent_md.lower() or "Enum" in agent_md
+
+
+def test_parse_data_model_columns_basic():
+    text = (
+        "### books\n"
+        "| Column | Type | Constraints |\n"
+        "|--------|------|-------------|\n"
+        "| id | INTEGER | PRIMARY KEY |\n"
+        "| title | TEXT | NOT NULL |\n"
+        "| isbn | TEXT | |\n"
+    )
+    result = parse_data_model_columns(text)
+    assert "books" in result
+    assert result["books"] == ["id", "title", "isbn"]
+
+
+def test_parse_data_model_columns_multiple_tables():
+    text = (
+        "### books\n"
+        "| Column | Type |\n"
+        "|--------|------|\n"
+        "| id | INTEGER |\n"
+        "| title | TEXT |\n\n"
+        "### members\n"
+        "| Column | Type |\n"
+        "|--------|------|\n"
+        "| id | INTEGER |\n"
+        "| email | TEXT |\n"
+    )
+    result = parse_data_model_columns(text)
+    assert "books" in result
+    assert "members" in result
+    assert result["books"] == ["id", "title"]
+    assert result["members"] == ["id", "email"]
+
+
+def test_parse_data_model_columns_empty():
+    assert parse_data_model_columns("") == {}
+    assert parse_data_model_columns("no tables here") == {}
+
+
+def test_generate_agent_md_includes_data_model():
+    prd_sections = {
+        "Architecture": "- **Database**: SQLite",
+        "Data Model": "### books\n| Column | Type |\n| id | INTEGER |\n",
+    }
+    content = generate_agent_md(prd_sections, [])
+    assert "## Data Model" in content
+    assert "books" in content
+
+
+def test_generate_agent_md_without_data_model():
+    prd_sections = {
+        "Architecture": "- **Database**: SQLite",
+    }
+    content = generate_agent_md(prd_sections, [])
+    assert "## Data Model" not in content
