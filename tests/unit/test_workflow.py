@@ -632,6 +632,42 @@ def test_guard_passes_when_all_ok(tmp_path):
     assert errors == []
 
 
+def test_guard_smoke_test_in_root(tmp_path):
+    """smoke_test.py in project root should be flagged."""
+    (tmp_path / "AGENT.md").write_text("# Rules\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "smoke_test.py").write_text("print('test')\n")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(tmp_path / "AGENT.md"),
+    )
+    assert any("smoke_test.py" in e and "tests/" in e for e in errors)
+
+
+def test_guard_result_files_in_root(tmp_path):
+    """SMOKE_TEST_RESULTS.md in root should be flagged."""
+    (tmp_path / "AGENT.md").write_text("# Rules\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "SMOKE_TEST_RESULTS.md").write_text("results\n")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(tmp_path / "AGENT.md"),
+    )
+    assert any("SMOKE_TEST_RESULTS" in e and ".reports" in e for e in errors)
+
+
+def test_guard_test_db_in_root(tmp_path):
+    """test_import.db in root should be flagged."""
+    (tmp_path / "AGENT.md").write_text("# Rules\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "test_import.db").write_bytes(b"\x00")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(tmp_path / "AGENT.md"),
+    )
+    assert any("test_import.db" in e for e in errors)
+
+
 def test_guard_detects_dataclass_subscript_access(tmp_path):
     """Detect member["field"] in tab files that import from models."""
     (tmp_path / "tests").mkdir()

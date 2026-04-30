@@ -744,6 +744,24 @@ class DevWorkflow:
         if agent_md_path and not (base / "tests").is_dir():
             errors.append("GUARD: Required directory 'tests/' is missing")
 
+        # Check 3b: File placement — enforce standard project layout
+        if agent_md_path:
+            # smoke_test.py belongs in tests/, not root
+            if (base / "smoke_test.py").exists() and not (base / "tests" / "smoke_test.py").exists():
+                errors.append(
+                    "GUARD: smoke_test.py must be in tests/ directory, not project root"
+                )
+            # Result files should not be in root
+            for artifact in base.glob("SMOKE_TEST_RESULTS*"):
+                errors.append(
+                    f"GUARD: {artifact.name} should be in .reports/, not project root"
+                )
+            # test databases should not be in root
+            for test_db in base.glob("test_*.db"):
+                errors.append(
+                    f"GUARD: {test_db.name} is a test artifact — add to .gitignore"
+                )
+
         # Check 4: Dataclass subscript access detection
         # Services return dataclass objects (from models.py).
         # Using obj["field"] on a dataclass causes TypeError at runtime.
