@@ -383,13 +383,21 @@ def main():
 
     # Final summary
     print()
+    has_issues = False
     if wf.report:
         print(f"Report status: {wf.report.status}")
         print(f"Total steps: {wf.report.total_steps}, Failures: {wf.report.failed_steps}")
+        if wf.report.failed_steps > 0:
+            has_issues = True
 
     if wf.report.status == "paused":
+        has_issues = True
         print("\n>>> Agent paused. To resume:")
         print(">>> wf.resume('your guidance here')")
+
+    if has_issues and wf.report.status != "paused":
+        print(f"\nTo fix remaining issues, run:")
+        print(f"  python build_with_workflow.py {args.requirement} --fix")
 
     # Project location and start instructions
     output_path = Path(output_dir).resolve()
