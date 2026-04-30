@@ -26,3 +26,9 @@ Do NOT use `pyqtSignal` with old-style `SIGNAL()`/`SLOT()` macros.
 ## Thread Safety
 - Never modify UI from a background thread — use signals to communicate
 - Use `QThread` with worker objects, not subclassing `QThread.run()`
+
+## Stylesheet (QSS) Pitfalls
+PyQt6/Qt6 removed several QSS properties that existed in Qt5:
+- WRONG: `alternate-row-background-color` (removed in Qt6)
+- RIGHT: Use `QTableView.setAlternatingRowColors(True)` in Python code, then style with `QTableView::item:alternate { background-color: #f8f9fa; }` in QSS
+- Other removed properties: `background`, use `background-color` instead
