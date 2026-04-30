@@ -26,6 +26,20 @@ class Messages:
         "Review the report and call resume(guidance='...') to continue."
     )
     workflow_completed: str = "All {total} tasks completed, {passed} successful."
+    scaffold_complete: str = (
+        "Scaffold complete. Framework: {frameworks}. "
+        "Rules: {rules_count} items. Project at: {output_dir}"
+    )
+    guard_agent_md_modified: str = (
+        "GUARD: AGENT.md was modified or deleted during execution — this is not allowed"
+    )
+    guard_forbidden_import: str = (
+        "GUARD: Forbidden import detected: {import_name} in {file} "
+        "(allowed: {allowed})"
+    )
+    guard_missing_directory: str = (
+        "GUARD: Required directory missing: {directory}"
+    )
 
 
 def chinese_messages() -> Messages:
@@ -46,4 +60,14 @@ def chinese_messages() -> Messages:
             "请查看报告，分析问题后调用 resume(guidance='...') 继续。"
         ),
         workflow_completed="全部 {total} 个任务完成，{passed} 个成功。",
+        scaffold_complete=(
+            "项目骨架创建完成。框架: {frameworks}。"
+            "规则: {rules_count} 条。项目位于: {output_dir}"
+        ),
+        guard_agent_md_modified="守卫: AGENT.md 在执行过程中被修改或删除 — 这是不允许的",
+        guard_forbidden_import=(
+            "守卫: 检测到禁用导入: {import_name} 在 {file} "
+            "（允许: {allowed}）"
+        ),
+        guard_missing_directory="守卫: 缺少必需目录: {directory}",
     )

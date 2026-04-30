@@ -98,6 +98,15 @@ class Prompts:
         "{schema}\n"
         "---"
     )
+    rules_injection_template: str = (
+        "\n\n---\n"
+        "## Project Rules (from AGENT.md — STRICTLY follow all rules below)\n"
+        "{rules}\n"
+        "---\n"
+        "## Engineering Standards (non-negotiable)\n"
+        "{engineering_standards}\n"
+        "---"
+    )
 
     # Compaction
     compact_system_prompt: str = (
@@ -192,6 +201,15 @@ def chinese_prompts() -> Prompts:
             "编写 SQL 查询时，必须使用下面定义的列名，不得自行发明列名。\n"
             "特别注意：主键列名、外键列名、列命名风格。\n"
             "{schema}\n"
+            "---"
+        ),
+        rules_injection_template=(
+            "\n\n---\n"
+            "## 项目规则（来自 AGENT.md — 必须严格遵守以下所有规则）\n"
+            "{rules}\n"
+            "---\n"
+            "## 工程标准（不可违反）\n"
+            "{engineering_standards}\n"
             "---"
         ),
         compact_system_prompt=(
