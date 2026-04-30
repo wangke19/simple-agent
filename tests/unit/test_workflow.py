@@ -632,6 +632,57 @@ def test_guard_passes_when_all_ok(tmp_path):
     assert errors == []
 
 
+def test_guard_detects_dataclass_subscript_access(tmp_path):
+    """Detect member["field"] in tab files that import from models."""
+    (tmp_path / "tests").mkdir()
+    # Create models.py with dataclass definitions
+    (tmp_path / "models.py").write_text(
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\n"
+        "class Member:\n"
+        "    id: int\n"
+        "    first_name: str\n"
+    )
+    # Create a tab file that uses subscript access on a dataclass
+    (tmp_path / "members_tab.py").write_text(
+        "from models import Member\n"
+        "members = service.get_members()\n"
+        "for member in members:\n"
+        "    name = member['first_name']\n"
+    )
+    errors = DevWorkflow._validate_guard_checks(str(tmp_path))
+    assert len(errors) == 1
+    assert "member" in errors[0].lower()
+    assert "dataclass" in errors[0].lower()
+
+
+def test_guard_allows_dict_access_on_row(tmp_path):
+    """row['column'] is fine — that's dict access on SQL results."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "models.py").write_text(
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\n"
+        "class Member:\n"
+        "    id: int\n"
+    )
+    (tmp_path / "catalog_tab.py").write_text(
+        "from models import Member\n"
+        "rows = db.execute_read('SELECT * FROM books')\n"
+        "for row in rows:\n"
+        "    title = row['title']\n"
+    )
+    errors = DevWorkflow._validate_guard_checks(str(tmp_path))
+    assert errors == []
+
+
+def test_guard_skips_when_no_models(tmp_path):
+    """No models.py means no dataclass check needed."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "some_tab.py").write_text("x = data['field']\n")
+    errors = DevWorkflow._validate_guard_checks(str(tmp_path))
+    assert errors == []
+
+
 # --- Task 4: PRD-aware schema validation tests ---
 
 

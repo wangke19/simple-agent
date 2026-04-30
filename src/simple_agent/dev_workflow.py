@@ -744,6 +744,53 @@ class DevWorkflow:
         if agent_md_path and not (base / "tests").is_dir():
             errors.append("GUARD: Required directory 'tests/' is missing")
 
+        # Check 4: Dataclass subscript access detection
+        # Services return dataclass objects (from models.py).
+        # Using obj["field"] on a dataclass causes TypeError at runtime.
+        models_file = base / "models.py"
+        if models_file.exists():
+            try:
+                models_content = models_file.read_text(encoding="utf-8")
+                # Find dataclass names: "class Foo:" preceded by @dataclass
+                dataclass_names = set()
+                lines = models_content.split("\n")
+                for idx, line in enumerate(lines):
+                    stripped = line.strip()
+                    if stripped.startswith("class ") and ":" in stripped:
+                        name = stripped.split("class ")[1].split("(")[0].split(":")[0].strip()
+                        if name and idx > 0 and "@dataclass" in lines[idx - 1]:
+                            dataclass_names.add(name.lower())
+                # Scan *_tab.py and *_dialog.py for subscript access on dataclass instances
+                if dataclass_names:
+                    for py_file in sorted(base.glob("*_tab.py")):
+                        try:
+                            content = py_file.read_text(encoding="utf-8")
+                        except Exception:
+                            continue
+                        rel = py_file.name
+                        # Look for patterns like m["field"] where m comes from a service call
+                        # Heuristic: variable["string_key"] in files that import dataclass types
+                        subscript_matches = _re.findall(
+                            r'(\w+)\[\s*[\'"](\w+)[\'"]\s*\]', content
+                        )
+                        if subscript_matches:
+                            # Check if file imports dataclass types from models
+                            has_model_import = "from models import" in content
+                            if has_model_import:
+                                for var_name, field_name in subscript_matches:
+                                    # Skip common dict-like patterns: row, data, settings, row_dict
+                                    if var_name.lower() in ("row", "rows", "data", "result", "results", "setting", "settings", "config", "kwargs", "env"):
+                                        continue
+                                    # Flag if the variable name suggests a dataclass instance
+                                    if var_name.lower() in dataclass_names or var_name.lower().startswith(tuple(dataclass_names)):
+                                        errors.append(
+                                            f"GUARD: Possible dataclass subscript access in {rel}: "
+                                            f"{var_name}[\"{field_name}\"] — "
+                                            f"use {var_name}.{field_name} instead (dataclass uses attribute access)"
+                                        )
+            except Exception:
+                pass
+
         return errors
 
     @staticmethod

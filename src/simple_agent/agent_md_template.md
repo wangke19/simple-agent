@@ -19,3 +19,8 @@ Every generated project MUST have:
 - No hardcoded secrets or credentials
 - Error messages must be user-friendly, not raw exceptions
 - Use descriptive variable and function names
+
+## Data Access Rules
+- `execute_read()` returns `dict` — use `row['column_name']` subscript access
+- Services return `dataclass` objects (from models.py) — use `obj.field` attribute access, NOT `obj['field']`
+- NEVER mix access patterns: dict subscript on a dataclass causes `TypeError: object is not subscriptable`
