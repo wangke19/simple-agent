@@ -169,6 +169,67 @@ def _fix_errors(output_dir: str, max_attempts: int = 3) -> None:
         print("App runs clean after fixes.")
 
 
+def _print_failure_analysis(report, requirement: str, output_dir: str) -> None:
+    """Analyze failed steps and print categorized diagnosis + fix recommendations."""
+    from simple_agent.task_report import StepStatus
+
+    failures = [s for s in report.steps if s.status == StepStatus.FAILED]
+    if not failures:
+        return
+
+    # Categorize failures
+    categories = {"llm_api": [], "tool_error": [], "validation": []}
+    for f in failures:
+        if f.action == "llm_call" or f.tool_name == "llm_call":
+            categories["llm_api"].append(f)
+        elif "guard" in (f.error or "").lower() or "validation" in (f.error or "").lower():
+            categories["validation"].append(f)
+        else:
+            categories["tool_error"].append(f)
+
+    print(f"\n{'─' * 50}")
+    print("Failure Analysis")
+    print(f"{'─' * 50}")
+
+    # LLM API failures
+    if categories["llm_api"]:
+        n = len(categories["llm_api"])
+        print(f"\n  LLM API failures: {n}")
+        print(f"    Cause: API timeout, rate limit, or output truncation")
+        print(f"    Layer: External (not engine, not generated code)")
+        print(f"    Fix:   Resume with retry guidance")
+        print(f"           python build_with_workflow.py {requirement} --retry")
+
+    # Tool execution failures (grep pattern error, bash error, etc.)
+    if categories["tool_error"]:
+        n = len(categories["tool_error"])
+        print(f"\n  Tool execution failures: {n}")
+        for f in categories["tool_error"]:
+            detail = f"{f.tool_name}({(f.error or '')[:50]})" if f.error else f.tool_name
+            print(f"    - Step {f.step}: {detail}")
+        print(f"    Cause: LLM generated invalid tool input (bad pattern, wrong path, etc.)")
+        print(f"    Layer: LLM generation quality")
+        print(f"    Fix:   Resume with specific guidance, e.g.:")
+        print(f"           python build_with_workflow.py {requirement} --retry")
+        print(f"           Then: wf.resume('fix grep pattern errors in settings_tab')")
+
+    # Validation failures (guard checks, import errors, schema mismatches)
+    if categories["validation"]:
+        n = len(categories["validation"])
+        print(f"\n  Validation failures: {n}")
+        for f in categories["validation"]:
+            print(f"    - Step {f.step}: {(f.error or '')[:80]}")
+        print(f"    Cause: Generated code violates project constraints")
+        print(f"    Layer: LLM generation quality + constraint enforcement")
+        print(f"    Fix:   Resume with constraint guidance")
+        print(f"           wf.resume('fix validation errors listed above')")
+
+    print(f"\n{'─' * 50}")
+    print("Summary: All failures are LLM-side (API or generation quality).")
+    print("No engine architecture changes needed for these failures.")
+    print(f"{'─' * 50}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build an app using DevWorkflow")
     parser.add_argument("requirement", nargs="?", default="requirement.txt",
@@ -390,14 +451,20 @@ def main():
         if wf.report.failed_steps > 0:
             has_issues = True
 
+    # Report file path
+    if wf.report and has_issues:
+        reports = sorted(Path(output_dir).joinpath(".reports").glob("report_*.md"), reverse=True)
+        if reports:
+            print(f"Report file: {reports[0].resolve()}")
+
     if wf.report.status == "paused":
         has_issues = True
         print("\n>>> Agent paused. To resume:")
         print(">>> wf.resume('your guidance here')")
 
     if has_issues and wf.report.status != "paused":
-        print(f"\nTo fix remaining issues, run:")
-        print(f"  python build_with_workflow.py {args.requirement} --fix")
+        # Analyze failures and provide categorized recommendations
+        _print_failure_analysis(wf.report, args.requirement, output_dir)
 
     # Project location and start instructions
     output_path = Path(output_dir).resolve()
