@@ -490,6 +490,7 @@ def test_scan_written_files_empty():
 def test_validate_task_output_passes(tmp_path):
     """Import check passes for a valid .py file."""
     (tmp_path / "valid.py").write_text("x = 1\n")
+    (tmp_path / "tests").mkdir()
     report = TaskReport(task="test")
     report.add_step(
         action="tool_call", tool_name="file_write",
@@ -503,6 +504,7 @@ def test_validate_task_output_passes(tmp_path):
 def test_validate_task_output_catches_import_error(tmp_path):
     """Import check fails for a file with bad import."""
     (tmp_path / "bad.py").write_text("from nonexistent_module import foo\n")
+    (tmp_path / "tests").mkdir()
     report = TaskReport(task="test")
     report.add_step(
         action="tool_call", tool_name="file_write",
@@ -518,6 +520,7 @@ def test_validate_task_output_catches_import_error(tmp_path):
 def test_execute_marks_failed_on_import_error(mock_agent, tmp_path):
     """Task that writes a file with import error gets marked failed."""
     (tmp_path / "bad.py").write_text("from nonexistent_module import foo\n")
+    (tmp_path / "tests").mkdir()
 
     mock_agent._llm.call.side_effect = [
         MagicMock(content=[MagicMock(type="text", text="1. Create bad module")]),

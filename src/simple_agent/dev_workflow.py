@@ -618,8 +618,8 @@ class DevWorkflow:
                             f"(allowed: {', '.join(allowed_frameworks or [])})"
                         )
 
-        # Check 3: Required directories
-        if not (base / "tests").is_dir():
+        # Check 3: Required directories (only when scaffold is active)
+        if agent_md_path and not (base / "tests").is_dir():
             errors.append("GUARD: Required directory 'tests/' is missing")
 
         return errors
