@@ -187,6 +187,8 @@ def main():
                         help="Show the latest report for this task")
     parser.add_argument("--list-reports", action="store_true",
                         help="List all reports for all tasks")
+    parser.add_argument("--skip-scaffold", action="store_true",
+                        help="Skip scaffold phase (for existing projects)")
     args = parser.parse_args()
 
     # --list-reports: scan all demo dirs for reports
@@ -236,6 +238,7 @@ def main():
                 output_dir = input("Enter output directory: ").strip()
             Path(output_dir).mkdir(parents=True, exist_ok=True)
 
+    # Create agent and workflow (shared between retry and full run)
     agent = SimpleAgent(max_failures=3)
     agent._system_prompt = (
         "You are a Python development expert. Use tools to create and modify files, run commands.\n"
@@ -252,10 +255,13 @@ def main():
     wf = DevWorkflow(agent, report_dir=f"{output_dir}/.reports", working_dir=output_dir)
 
     if args.retry:
-        # Retry mode: re-plan, then retry only failed tasks
+        # Retry mode: load scaffold info, re-plan, then retry only failed tasks
         print("=" * 60)
         print(f"Retrying failed tasks for: {stem}")
         print("=" * 60)
+
+        # Load existing scaffold (skip creating new one)
+        wf.scaffold(prd_path=str(req_path), output_dir=output_dir, skip=True)
 
         wf.plan_task(requirement)
         wf.decompose(requirement)
@@ -298,6 +304,20 @@ def main():
         print(requirement[:200])
         if len(requirement) > 200:
             print(f"... ({len(requirement)} chars total)")
+        print()
+
+        # Phase 0: Scaffold
+        print("=" * 60)
+        print("Phase 0: Scaffold")
+        print("=" * 60)
+        scaffold_result = wf.scaffold(
+            prd_path=str(req_path),
+            output_dir=output_dir,
+            skip=args.skip_scaffold,
+        )
+        if scaffold_result and scaffold_result.detected_frameworks:
+            print(f"  Detected frameworks: {', '.join(scaffold_result.detected_frameworks)}")
+            print(f"  Rules: {scaffold_result.rules_count} items")
         print()
 
         print("=" * 60)

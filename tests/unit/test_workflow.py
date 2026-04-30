@@ -564,3 +564,66 @@ def test_scaffold_adds_rules_block_to_tasks(mock_agent, tmp_path):
     messages = task1_kwargs.get("messages")
     user_msgs = [m for m in messages if m["role"] == "user"]
     assert any("Project Rules" in m.get("content", "") for m in user_msgs)
+
+
+# --- Task 5: Guard checks tests ---
+
+
+def test_guard_agent_md_integrity(tmp_path):
+    """AGENT.md should not be deleted or emptied."""
+    agent_md = tmp_path / "AGENT.md"
+    agent_md.write_text("# Rules\n- Rule 1\n")
+    agent_md.unlink()
+    errors = DevWorkflow._validate_guard_checks(str(tmp_path), agent_md_path=str(agent_md))
+    assert any("AGENT.md" in e for e in errors)
+
+
+def test_guard_forbidden_import_detection(tmp_path):
+    """Detect forbidden imports based on AGENT.md content."""
+    (tmp_path / "bad.py").write_text("from PyQt5.QtWidgets import QMainWindow\n")
+    agent_md = tmp_path / "AGENT.md"
+    agent_md.write_text("# Rules\n- PyQt6 ONLY (do NOT use PyQt5)\n")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(agent_md),
+        allowed_frameworks=["PyQt6"],
+        forbidden_frameworks=["PyQt5", "PySide2"],
+    )
+    assert any("PyQt5" in e for e in errors)
+
+
+def test_guard_forbidden_import_allows_correct(tmp_path):
+    """Correct imports pass the guard."""
+    (tmp_path / "good.py").write_text("from PyQt6.QtWidgets import QMainWindow\n")
+    agent_md = tmp_path / "AGENT.md"
+    agent_md.write_text("# Rules\n- PyQt6 ONLY\n")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(agent_md),
+        allowed_frameworks=["PyQt6"],
+        forbidden_frameworks=["PyQt5", "PySide2"],
+    )
+    assert not any("PyQt" in e for e in errors)
+
+
+def test_guard_missing_tests_directory(tmp_path):
+    """tests/ directory must exist."""
+    agent_md = tmp_path / "AGENT.md"
+    agent_md.write_text("# Rules\n")
+    errors = DevWorkflow._validate_guard_checks(str(tmp_path), agent_md_path=str(agent_md))
+    assert any("tests" in e for e in errors)
+
+
+def test_guard_passes_when_all_ok(tmp_path):
+    """No errors when all checks pass."""
+    (tmp_path / "AGENT.md").write_text("# Rules\n- Rule 1\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "good.py").write_text("from PyQt6.QtWidgets import QMainWindow\n")
+    errors = DevWorkflow._validate_guard_checks(
+        str(tmp_path),
+        agent_md_path=str(tmp_path / "AGENT.md"),
+        allowed_frameworks=["PyQt6"],
+        forbidden_frameworks=["PyQt5"],
+    )
+    assert errors == []
+
