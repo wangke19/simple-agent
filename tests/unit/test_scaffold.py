@@ -99,11 +99,15 @@ def test_create_skeleton_creates_directories(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=["pyqt6"], has_database=True)
     assert (output / "tests").is_dir()
+    assert (output / "services").is_dir()
+    assert (output / "ui").is_dir()
+    assert (output / "config").is_dir()
+    assert (output / "services" / "__init__.py").exists()
+    assert (output / "ui" / "__init__.py").exists()
     assert (output / "main.py").exists()
     assert (output / "requirements.txt").exists()
     assert (output / "database_init.sql").exists()
     assert (output / ".gitignore").exists()
-    assert not (output / "src").exists()
 
 
 def test_gitignore_covers_runtime_artifacts(tmp_path):
@@ -121,9 +125,11 @@ def test_generate_agent_md_has_file_organization_table(tmp_path):
         "Architecture": "- **Database**: SQLite",
     }
     content = generate_agent_md(prd_sections, [])
+    assert "services/" in content
+    assert "ui/" in content
     assert "tests/" in content
-    assert ".reports/" in content
-    assert "SMOKE_TEST_RESULTS.md" not in content or "WRONG" in content
+    assert "*_service.py" in content
+    assert "*_tab.py" in content
 
 
 def test_create_skeleton_no_database(tmp_path):

@@ -139,23 +139,48 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
     lines.append("# Project Rules\n")
 
-    # Directory structure — always present, prevents LLM from inventing subdirs
+    # Directory structure — standard layered architecture
     lines.append("## Directory Structure")
-    lines.append("Source files (`.py`) are placed in the project root directory.")
-    lines.append("Do NOT create subdirectories like `src/`, `services/`, `ui/`, `views/`, etc.")
+    lines.append("Projects follow a layered architecture with clear separation of concerns.")
+    lines.append("Files MUST go in their designated directory — do NOT put everything in root.")
     lines.append("")
-    lines.append("| What | Where |")
-    lines.append("|------|-------|")
-    lines.append("| Source code (`*.py`) | Project root |")
-    lines.append("| Database schema | `database_init.sql` at root |")
-    lines.append("| Stylesheet | `styles.qss` at root |")
-    lines.append("| Tests | `tests/` directory (smoke tests go in `tests/smoke_test.py`) |")
-    lines.append("| Workflow reports | `.reports/` (gitignored, auto-generated) |")
-    lines.append("| Runtime data (`*.db`) | Root (gitignored, NOT committed) |")
+    lines.append("```")
+    lines.append("project/")
+    lines.append("├── main.py              # Entry point ONLY — imports and launches app")
+    lines.append("├── models.py            # Data models / dataclasses")
+    lines.append("├── database_init.sql    # Single source of truth for DB schema")
+    lines.append("├── requirements.txt     # Dependencies")
+    lines.append("├── services/            # Business logic layer")
+    lines.append("│   ├── __init__.py")
+    lines.append("│   ├── db_manager.py    # Database connection and query helpers")
+    lines.append("│   └── *_service.py     # One service per domain entity")
+    lines.append("├── ui/                  # Presentation layer (views, dialogs)")
+    lines.append("│   ├── __init__.py")
+    lines.append("│   ├── main_window.py   # Main window — assembles all views")
+    lines.append("│   ├── *_tab.py         # Tab / page views")
+    lines.append("│   └── *_dialog.py      # Modal dialogs for forms")
+    lines.append("├── config/")
+    lines.append("│   └── styles.qss       # Stylesheet")
+    lines.append("├── tests/")
+    lines.append("│   └── smoke_test.py    # Smoke tests")
+    lines.append("├── .reports/            # Workflow reports (gitignored)")
+    lines.append("└── AGENT.md             # This file")
+    lines.append("```")
     lines.append("")
-    lines.append("Do NOT create ad-hoc files in the project root:")
-    lines.append("- WRONG: `SMOKE_TEST_RESULTS.md`, `test_import.db`, `smoke_test.py` in root")
-    lines.append("- RIGHT: `tests/smoke_test.py`, `.reports/` for results, gitignore `*.db`")
+    lines.append("### Import Rules")
+    lines.append("- From `main.py`: `from ui.main_window import MainWindow`")
+    lines.append("- From `ui/*_tab.py`: `from services.book_service import BookService`")
+    lines.append("- From `services/*_service.py`: `from models import Book`")
+    lines.append("- Do NOT use relative imports — use package imports as shown above")
+    lines.append("")
+    lines.append("### File Placement Rules")
+    lines.append("- `*_service.py` → MUST go in `services/`")
+    lines.append("- `*_tab.py`, `*_dialog.py`, `main_window.py` → MUST go in `ui/`")
+    lines.append("- `db_manager.py` → MUST go in `services/`")
+    lines.append("- `models.py` → stays in project root (shared by all layers)")
+    lines.append("- `styles.qss` → MUST go in `config/`")
+    lines.append("- Smoke tests → MUST go in `tests/`")
+    lines.append("- Do NOT create files outside these directories")
     lines.append("")
 
     arch = prd_sections.get("Architecture", "")
@@ -202,11 +227,17 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
 
 
 def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) -> None:
-    """Create project directory skeleton with standard elements."""
+    """Create project directory skeleton with standard layered structure."""
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
 
-    (base / "tests").mkdir(exist_ok=True)
+    # Standard layered directories
+    for subdir in ("services", "ui", "config", "tests"):
+        (base / subdir).mkdir(exist_ok=True)
+
+    # __init__.py for Python packages
+    for pkg in ("services", "ui"):
+        (base / pkg / "__init__.py").write_text("", encoding="utf-8")
 
     (base / "main.py").write_text("", encoding="utf-8")
 
