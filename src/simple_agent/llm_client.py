@@ -5,6 +5,8 @@ from typing import Any
 
 import anthropic
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 from simple_agent.config import AgentConfig
 from simple_agent.exceptions import LLMError
 
