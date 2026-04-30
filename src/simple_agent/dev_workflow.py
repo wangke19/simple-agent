@@ -626,10 +626,10 @@ class DevWorkflow:
 
     @staticmethod
     def _scan_all_py_files(working_dir: str) -> list[str]:
-        """Recursively find all .py files in working_dir."""
+        """Recursively find all .py files in working_dir, returning paths relative to working_dir."""
         import pathlib
         base = pathlib.Path(working_dir)
-        return sorted(str(p) for p in base.rglob("*.py"))
+        return sorted(str(p.relative_to(base)) for p in base.rglob("*.py"))
 
     @staticmethod
     def _validate_task_output(
