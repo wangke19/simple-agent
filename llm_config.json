@@ -1,0 +1,10 @@
+{
+  "glm": {
+    "base_url": "https://open.bigmodel.cn/api/anthropic",
+    "model": "glm-4.7"
+  },
+  "minimax": {
+    "base_url": "https://api.minimaxi.com/anthropic",
+    "model": "MiniMax-M2.7"
+  }
+}

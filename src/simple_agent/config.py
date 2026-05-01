@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-_PROVIDER_PRESETS: dict[str, dict[str, str]] = {
-    "glm": {
-        "base_url": "https://open.bigmodel.cn/api/anthropic",
-        "model": "glm-4.7",
-    },
-    "minimax": {
-        "base_url": "https://api.minimaxi.com/anthropic",
-        "model": "MiniMax-M2.7",
-    },
-}
+_CONFIG_FILE = "llm_config.json"
+
+
+def _load_provider_presets() -> dict[str, dict[str, str]]:
+    """Load provider presets from llm_config.json."""
+    config_path = os.path.join(os.path.dirname(__file__), "..", "..", _CONFIG_FILE)
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 
 @dataclass
@@ -33,7 +35,8 @@ class AgentConfig:
             raise AgentConfigError("ANTHROPIC_AUTH_TOKEN is not set")
 
         provider = os.getenv("LLM_PROVIDER", "")
-        preset = _PROVIDER_PRESETS.get(provider, {})
+        presets = _load_provider_presets()
+        preset = presets.get(provider, {})
 
         return cls(
             base_url=os.getenv("ANTHROPIC_BASE_URL") or preset.get("base_url", "https://api.anthropic.com"),
@@ -42,7 +45,7 @@ class AgentConfig:
             max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
             log_level=os.getenv("AGENT_LOG_LEVEL", "INFO"),
             max_context_tokens=int(os.getenv("AGENT_MAX_CONTEXT_TOKENS", "100000")),
-            compact_threshold=float(os.getenv("AGET_COMPACT_THRESHOLD", "0.8")),
+            compact_threshold=float(os.getenv("AGENT_COMPACT_THRESHOLD", "0.8")),
             keep_recent_messages=int(os.getenv("AGENT_KEEP_RECENT_MESSAGES", "4")),
         )
 
