@@ -146,9 +146,10 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
     lines.append("")
     lines.append("```")
     lines.append("project/")
+    lines.append("├── main.py                  # Thin entry point — run from project root")
     lines.append("├── src/                     # ALL source code lives here")
     lines.append("│   ├── __init__.py")
-    lines.append("│   ├── main.py              # Entry point — imports and launches app")
+    lines.append("│   ├── app.py               # Application entry — creates and runs app")
     lines.append("│   ├── models.py            # Data models / dataclasses")
     lines.append("│   ├── database/")
     lines.append("│   │   ├── __init__.py")
@@ -174,23 +175,24 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
     lines.append("```")
     lines.append("")
     lines.append("### Import Rules")
-    lines.append("All imports use `src.` prefix:")
+    lines.append("All imports use `src.` prefix (running from project root):")
     lines.append("- `from src.ui.main_window import MainWindow`")
     lines.append("- `from src.services.book_service import BookService`")
     lines.append("- `from src.models import Book`")
     lines.append("- `from src.database.db_manager import DatabaseManager`")
-    lines.append("- `from src.database.schema import SCHEMA_PATH` (if needed)")
     lines.append("- Do NOT use relative imports or sys.path hacks")
+    lines.append("- The app is always run from the project root: `python main.py`")
     lines.append("")
     lines.append("### File Placement Rules")
-    lines.append("- `main.py`, `models.py` → `src/`")
+    lines.append("- `main.py` → project root (thin entry point, only 3 lines)")
+    lines.append("- `app.py`, `models.py` → `src/`")
     lines.append("- `db_manager.py`, `schema.sql` → `src/database/`")
     lines.append("- `*_service.py` → `src/services/`")
     lines.append("- `*_tab.py`, `*_dialog.py`, `main_window.py` → `src/ui/`")
     lines.append("- `styles.qss` → `config/`")
     lines.append("- Smoke tests → `tests/`")
     lines.append("- Runtime databases (`*.db`) → `data/` (gitignored)")
-    lines.append("- Do NOT create .py files in the project root")
+    lines.append("- Do NOT create .py files in the project root (except main.py)")
     lines.append("")
 
     arch = prd_sections.get("Architecture", "")
@@ -253,8 +255,14 @@ def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) 
     for pkg in ("database", "services", "ui"):
         (src / pkg / "__init__.py").write_text("", encoding="utf-8")
 
-    # Entry point
-    (src / "main.py").write_text("", encoding="utf-8")
+    # Entry point at project root (thin wrapper)
+    (base / "main.py").write_text(
+        "from src.app import main\n\nif __name__ == '__main__':\n    main()\n",
+        encoding="utf-8",
+    )
+
+    # Actual application code in src/
+    (src / "app.py").write_text("", encoding="utf-8")
 
     # Data model stays at src/ level (shared by all layers)
     if has_database:

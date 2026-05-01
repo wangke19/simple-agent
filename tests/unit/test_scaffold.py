@@ -98,10 +98,13 @@ def test_generate_agent_md_includes_conventions(tmp_path):
 def test_create_skeleton_creates_directories(tmp_path):
     output = tmp_path / "project"
     create_skeleton(str(output), frameworks=["pyqt6"], has_database=True)
+    # Thin entry point at project root
+    assert (output / "main.py").exists()
+    assert "from src.app import main" in (output / "main.py").read_text()
     # src-layout: all source code in src/
     assert (output / "src").is_dir()
     assert (output / "src" / "__init__.py").exists()
-    assert (output / "src" / "main.py").exists()
+    assert (output / "src" / "app.py").exists()
     assert (output / "src" / "database").is_dir()
     assert (output / "src" / "database" / "__init__.py").exists()
     assert (output / "src" / "database" / "schema.sql").exists()
