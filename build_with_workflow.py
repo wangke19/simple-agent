@@ -291,12 +291,12 @@ def main():
     # Interactive path confirmation (only for full runs)
     if not args.retry:
         print(f"\nProject will be created at: {Path(output_dir).resolve()}/")
-        confirm = input("Use this path? [Y/n/custom path]: ").strip()
+        confirm = input("Use this path? [Y/n/custom path]: ").strip().rstrip("\\/")
         if confirm and confirm.lower() not in ("y", "yes", ""):
             if confirm.lower() not in ("n", "no"):
                 output_dir = confirm
             else:
-                output_dir = input("Enter output directory: ").strip()
+                output_dir = input("Enter output directory: ").strip().rstrip("\\/")
             Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Create agent and workflow (shared between retry and full run)
