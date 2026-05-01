@@ -34,7 +34,7 @@ class AgentConfig:
         if not api_key:
             raise AgentConfigError("ANTHROPIC_AUTH_TOKEN is not set")
 
-        provider = os.getenv("LLM_PROVIDER", "")
+        provider = os.getenv("LLM_PROVIDER", "glm")
         presets = _load_provider_presets()
         preset = presets.get(provider, {})
 
