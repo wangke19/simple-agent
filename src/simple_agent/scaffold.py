@@ -183,6 +183,13 @@ def generate_agent_md(prd_sections: dict[str, str], frameworks: list[str]) -> st
     lines.append("- Do NOT use relative imports or sys.path hacks")
     lines.append("- The app is always run from the project root: `python main.py`")
     lines.append("")
+    lines.append("### Database Initialization (CRITICAL)")
+    lines.append("`src/database/db_manager.py` is pre-built with an `initialize_schema()` method.")
+    lines.append("It reads `src/database/schema.sql` and creates all tables.")
+    lines.append("MUST call `db_manager.initialize_schema()` before any service operations,")
+    lines.append("typically in MainWindow's `__init__` or `initialize_services()` method.")
+    lines.append("Do NOT re-implement schema loading — just call the existing method.")
+    lines.append("")
     lines.append("### File Placement Rules")
     lines.append("- `main.py` → project root (thin entry point, only 3 lines)")
     lines.append("- `app.py`, `models.py` → `src/`")
@@ -264,9 +271,66 @@ def create_skeleton(output_dir: str, frameworks: list[str], has_database: bool) 
     # Actual application code in src/
     (src / "app.py").write_text("", encoding="utf-8")
 
-    # Data model stays at src/ level (shared by all layers)
+    # Pre-built db_manager with schema initialization support
     if has_database:
         (src / "database" / "schema.sql").write_text("", encoding="utf-8")
+        (src / "database" / "db_manager.py").write_text(
+            '"""Database Manager for SQLite operations."""\n'
+            "import sqlite3\n"
+            "from pathlib import Path\n"
+            "\n\n"
+            "class DatabaseManager:\n"
+            '    """Manages SQLite connections with dict-based row fetching."""\n'
+            "\n"
+            "    def __init__(self, db_path: str) -> None:\n"
+            "        self.db_path = db_path\n"
+            "        self._connection: sqlite3.Connection | None = None\n"
+            "        Path(db_path).parent.mkdir(parents=True, exist_ok=True)\n"
+            "\n"
+            "    def _get_connection(self) -> sqlite3.Connection:\n"
+            "        if self._connection is None:\n"
+            "            self._connection = sqlite3.connect(self.db_path)\n"
+            "            self._connection.row_factory = sqlite3.Row\n"
+            "        return self._connection\n"
+            "\n"
+            "    def execute_write(self, query: str, params: tuple = ()) -> int:\n"
+            "        conn = self._get_connection()\n"
+            "        cursor = conn.cursor()\n"
+            "        try:\n"
+            "            cursor.execute(query, params)\n"
+            "            conn.commit()\n"
+            "            return cursor.lastrowid if query.strip().upper().startswith('INSERT') else cursor.rowcount\n"
+            "        except sqlite3.Error:\n"
+            "            conn.rollback()\n"
+            "            raise\n"
+            "\n"
+            "    def execute_read(self, query: str, params: tuple = ()) -> list[dict]:\n"
+            "        conn = self._get_connection()\n"
+            "        cursor = conn.cursor()\n"
+            "        cursor.execute(query, params)\n"
+            "        return [dict(row) for row in cursor.fetchall()]\n"
+            "\n"
+            "    def execute_read_one(self, query: str, params: tuple = ()) -> dict | None:\n"
+            "        conn = self._get_connection()\n"
+            "        cursor = conn.cursor()\n"
+            "        cursor.execute(query, params)\n"
+            "        row = cursor.fetchone()\n"
+            "        return dict(row) if row else None\n"
+            "\n"
+            "    def initialize_schema(self) -> None:\n"
+            '        """Read schema.sql and initialize database tables."""\n'
+            "        schema_path = Path(__file__).parent / 'schema.sql'\n"
+            "        if schema_path.exists():\n"
+            "            conn = self._get_connection()\n"
+            "            conn.executescript(schema_path.read_text(encoding='utf-8'))\n"
+            "            conn.commit()\n"
+            "\n"
+            "    def close(self) -> None:\n"
+            "        if self._connection is not None:\n"
+            "            self._connection.close()\n"
+            "            self._connection = None\n",
+            encoding="utf-8",
+        )
 
     # Non-code directories at project root
     for subdir in ("config", "tests", "data"):
