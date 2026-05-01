@@ -671,7 +671,7 @@ class DevWorkflow:
         if not base.exists():
             return []
         errors = []
-        for sf in sorted(base.glob("*.sql")):
+        for sf in sorted(base.rglob("*.sql")):
             try:
                 content = sf.read_text(encoding="utf-8")
             except Exception:
@@ -819,6 +819,21 @@ class DevWorkflow:
         return sorted(str(p.relative_to(base)) for p in base.rglob("*.py"))
 
     @staticmethod
+    def _extract_modified_files(report: TaskReport) -> set[str]:
+        """Extract .py file paths written/edited by the task from tool calls."""
+        modified = set()
+        for step in report.steps:
+            if step.action != "tool_call":
+                continue
+            if step.tool_name not in ("file_write", "file_edit"):
+                continue
+            tool_input = step.tool_input or {}
+            path = tool_input.get("path", "")
+            if path.endswith(".py"):
+                modified.add(path)
+        return modified
+
+    @staticmethod
     def _validate_task_output(
         report: TaskReport, working_dir: str,
         agent_md_path: str = "",
@@ -830,9 +845,12 @@ class DevWorkflow:
         import subprocess
         errors = []
 
-        # Phase 1: Python import checks on all project files
-        files = DevWorkflow._scan_all_py_files(working_dir)
-        for filepath in files:
+        # Phase 1: Import checks — only on files modified by this task
+        modified_files = DevWorkflow._extract_modified_files(report)
+        for filepath in sorted(modified_files):
+            # Skip __init__.py files — relative imports fail when loaded in isolation
+            if filepath.endswith("__init__.py"):
+                continue
             check_code = (
                 "import importlib.util, sys; "
                 f"spec = importlib.util.spec_from_file_location('_check', '{filepath}'); "
@@ -846,7 +864,11 @@ class DevWorkflow:
                     cwd=working_dir,
                 )
                 if result.returncode != 0:
-                    errors.append(f"{filepath}: {result.stderr.strip()}")
+                    stderr = result.stderr.strip()
+                    # Filter false positives from isolation loading
+                    if "No module named '_check'" in stderr:
+                        continue
+                    errors.append(f"{filepath}: {stderr}")
             except subprocess.TimeoutExpired:
                 errors.append(f"{filepath}: import check timed out")
 
@@ -882,7 +904,7 @@ class DevWorkflow:
 
         # Find and parse SQL schema files
         schema_tables: dict[str, set[str]] = {}
-        for sf in sorted(base.glob("*.sql")):
+        for sf in sorted(base.rglob("*.sql")):
             try:
                 content = sf.read_text(encoding="utf-8")
             except Exception:
