@@ -30,13 +30,13 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls) -> AgentConfig:
-        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "")
-        if not api_key:
-            raise AgentConfigError("ANTHROPIC_AUTH_TOKEN is not set")
-
         provider = os.getenv("LLM_PROVIDER", "glm")
         presets = _load_provider_presets()
         preset = presets.get(provider, {})
+
+        api_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or preset.get("api_key", "")
+        if not api_key:
+            raise AgentConfigError("ANTHROPIC_AUTH_TOKEN is not set")
 
         return cls(
             base_url=os.getenv("ANTHROPIC_BASE_URL") or preset.get("base_url", "https://api.anthropic.com"),
