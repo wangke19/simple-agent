@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 
-_CONFIG_FILE = "llm_config.json"
+_CONFIG_FILE = "config/llm_config.json"
 
 
 def _load_provider_presets() -> dict[str, dict[str, str]]:
