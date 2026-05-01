@@ -27,6 +27,19 @@ Do NOT use `pyqtSignal` with old-style `SIGNAL()`/`SLOT()` macros.
 - Never modify UI from a background thread — use signals to communicate
 - Use `QThread` with worker objects, not subclassing `QThread.run()`
 
+## QFormLayout.addRow() Pitfall (CRITICAL)
+`QFormLayout.addRow()` does NOT accept `(QLayout, QWidget)` — passing a bare `QVBoxLayout` as the label argument causes `TypeError`.
+- WRONG: `layout = QVBoxLayout(); layout.addWidget(label); form.addRow(layout, widget)`
+- RIGHT: Wrap the layout in a QWidget first:
+```python
+container = QWidget()
+layout = QVBoxLayout(container)
+layout.setContentsMargins(0, 0, 0, 0)
+layout.addWidget(label)
+form.addRow(container, widget)
+```
+Valid overloads: `(str, QWidget)`, `(str, QLayout)`, `(QWidget, QWidget)`, `(QWidget, QLayout)`, `(QWidget)`, `(QLayout)`.
+
 ## Stylesheet (QSS) Pitfalls
 PyQt6/Qt6 removed several QSS properties that existed in Qt5:
 - WRONG: `alternate-row-background-color` (removed in Qt6)

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 _CONFIG_FILE = "config/llm_config.json"
 
@@ -37,6 +40,16 @@ class AgentConfig:
         api_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or preset.get("api_key", "")
         if not api_key:
             raise AgentConfigError("ANTHROPIC_AUTH_TOKEN is not set")
+
+        # Warn if api_key came from env but doesn't match selected provider's preset
+        env_key = os.getenv("ANTHROPIC_AUTH_TOKEN")
+        preset_key = preset.get("api_key", "")
+        if env_key and preset_key and env_key != preset_key:
+            logger.warning(
+                "API key from ANTHROPIC_AUTH_TOKEN does not match %s preset. "
+                "This may cause authentication errors (401).",
+                provider,
+            )
 
         return cls(
             base_url=os.getenv("ANTHROPIC_BASE_URL") or preset.get("base_url", "https://api.anthropic.com"),
