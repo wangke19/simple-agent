@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+llm_config.json
 .env
 .pytest_cache/
 .remember/
