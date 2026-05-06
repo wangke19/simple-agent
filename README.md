@@ -1,6 +1,6 @@
 # Simple Agent
 
-A minimal AI agent framework with tool-calling, multi-step workflows, and configurable prompts. Works with any Anthropic-compatible API (Anthropic Claude, ZhiPu glm, etc.).
+A minimal AI agent framework with tool-calling, multi-step workflows, scaffold generation, and configurable prompts. Works with any Anthropic-compatible API (Anthropic Claude, ZhiPu glm, MiniMax, etc.).
 
 ## How It Works
 
@@ -28,13 +28,33 @@ python main.py
 
 ## Configuration
 
-Set environment variables in `.env`:
+### LLM Provider
+
+Set `LLM_PROVIDER` environment variable to select backend:
+
+| Provider | Model | Notes |
+|----------|-------|-------|
+| `glm` (default) | glm-5.1 | ZhiPu API |
+| `minimax` | MiniMax-M2.7 | MiniMax API |
+
+Provider API keys and endpoints are stored in `config/llm_config.json`. You can also override individually:
+
+```bash
+export LLM_PROVIDER=minimax
+export ANTHROPIC_AUTH_TOKEN=your_api_key
+export ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+```
+
+### Agent Behavior
 
 | Variable | Description | Default |
-|---|---|---|
-| `ANTHROPIC_BASE_URL` | API base URL | `https://api.anthropic.com` |
-| `ANTHROPIC_AUTH_TOKEN` | API key (required) | — |
+|----------|-------------|---------|
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | Model name | `claude-sonnet-4-20250514` |
+| `AGENT_MAX_STEPS` | Max tool-call iterations | `5` |
+| `AGENT_LOG_LEVEL` | Logging level | `INFO` |
+| `AGENT_MAX_CONTEXT_TOKENS` | Context window size | `100000` |
+| `AGENT_COMPACT_THRESHOLD` | When to compact (0-1) | `0.8` |
+| `AGENT_KEEP_RECENT_MESSAGES` | Messages to keep before compacting | `4` |
 
 ## Basic Usage
 
@@ -128,6 +148,25 @@ wf.execute(max_steps_per_task=8)
 wf.run_all(requirement)
 ```
 
+## Scaffold: Generate Project Structure from Specs
+
+Generate projects from structured specs with role-based constraints:
+
+```python
+from simple_agent import ScaffoldConfig, run_scaffold
+
+config = ScaffoldConfig(
+    project_name="my_project",
+    spec={
+        "roles": ["frontend", "backend"],
+        "framework": "pyqt6",
+        "data_model": ["User(id, name, email)", "Order(id, user_id, total)"],
+    },
+)
+result = run_scaffold(config)
+print(result.files_created)
+```
+
 ## Configurable Prompts & Messages
 
 All prompts and messages have English defaults with full customization:
@@ -204,20 +243,45 @@ wf = DevWorkflow(agent, workflow_config=config)
 | `SearchTool` | `search` | Search for information (placeholder) |
 | `MemoryTool` | `memory` | Save/recall cross-session info |
 
+## Skill System
+
+Build reusable subagent skills with the skill registry:
+
+```python
+from simple_agent import Skill, SkillRegistry, UseSkillTool
+
+# Define a skill
+skill = Skill(
+    name="code_review",
+    description="Review code for bugs and style issues",
+    system_prompt="You are a code reviewer...",
+)
+
+registry = SkillRegistry()
+registry.register(skill)
+agent.register_tool(UseSkillTool(registry))
+```
+
 ## Project Structure
 
 ```
 src/simple_agent/
 ├── __init__.py        # Public API exports
 ├── agent.py           # SimpleAgent: decision loop with failure tracking & pause/resume
-├── config.py          # AgentConfig dataclass from environment
+├── config.py          # AgentConfig dataclass from environment + LLM provider presets
 ├── llm_client.py      # Anthropic SDK wrapper
-├── dev_workflow.py     # DevWorkflow, WorkflowConfig: plan → decompose → contracts → execute
+├── dev_workflow.py    # DevWorkflow, WorkflowConfig: plan → decompose → contracts → execute
 ├── prompts.py         # Prompts dataclass + chinese_prompts()
 ├── messages.py        # Messages dataclass + chinese_messages()
 ├── compactor.py       # Context window compaction via LLM summarization
 ├── task_report.py     # TaskReport: markdown execution log & checklist
+├── scaffold.py        # Scaffold framework for spec-driven project generation
 ├── exceptions.py      # AgentError, LLMError, ToolError
+├── skills/
+│   ├── __init__.py    # Skill, SkillRegistry, UseSkillTool, load_skill
+│   ├── loader.py      # Skill loading from files
+│   ├── registry.py    # SkillRegistry implementation
+│   └── tool.py        # UseSkillTool implementation
 └── tools/
     ├── base.py        # BaseTool ABC
     ├── registry.py    # ToolRegistry
@@ -234,7 +298,7 @@ src/simple_agent/
 ## Testing
 
 ```bash
-python -m pytest tests/unit/ -v          # 121 unit tests (mocked LLM)
+python -m pytest tests/unit/ -v          # Unit tests (mocked LLM)
 python -m pytest tests/integration/ -v   # Integration tests (real API)
 ```
 
